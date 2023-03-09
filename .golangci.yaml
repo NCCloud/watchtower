@@ -1,0 +1,17 @@
+linters:
+  enable-all: true
+  disable:
+    - exhaustruct # Disallows to left unused fields in structs
+    - exhaustivestruct # Disallows to left unused fields in structs
+    - wrapcheck # Disallows to use non-wrapped errors
+    - gochecknoinits # Disallows to use init functions
+    - ireturn # Disallows to return Interfaces
+    - gci # Disable gci import ordering checker since its buggy
+    - goerr113 # Disallows to use errors.New without wrapping
+    - forcetypeassert # Disallows to use type assertions without checking
+linters-settings:
+  cyclop:
+    max-complexity: 15
+run:
+  go: '1.19'
+  tests: false

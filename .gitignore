@@ -1,0 +1,5 @@
+.idea
+.DS_Store
+*.out
+bin
+chart-template.yaml
