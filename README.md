@@ -25,9 +25,9 @@ Alternatively, you can compile and install Watchtower using any method you choos
 
 Watchtower's configuration is stored in the `config.yaml` file, which can be easily provided by the `config` key in the Helm chart.
 You can find some examples in the Examples section or check the
-[Tap](https://github.com/NCCloud/watchtower/blob/update-readme/pkg/models/tap.go),
-[Sink](https://github.com/NCCloud/watchtower/blob/update-readme/pkg/models/sink.go) and
-[Flow](https://github.com/NCCloud/watchtower/blob/update-readme/pkg/models/flow.go) for all the fields.
+[Tap](https://github.com/NCCloud/watchtower/blob/main/pkg/models/tap.go),
+[Sink](https://github.com/NCCloud/watchtower/blob/main/pkg/models/sink.go) and
+[Flow](https://github.com/NCCloud/watchtower/blob/main/pkg/models/flow.go) for all the fields.
 
 ## 📐 Architecture
 
