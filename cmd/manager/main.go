@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"strings"
+
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/models"
