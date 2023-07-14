@@ -20,9 +20,6 @@ const (
 )
 
 func main() {
-	scheme := runtime.NewScheme()
-	logger := zap.New()
-
 	config, configErr := models.NewConfig("./config.yaml")
 	if configErr != nil {
 		panic(configErr)
@@ -34,8 +31,8 @@ func main() {
 	}
 
 	manager, managerErr := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Logger:                 logger,
+		Scheme:                 runtime.NewScheme(),
+		Logger:                 zap.New(),
 		MetricsBindAddress:     fmt.Sprintf(":%d", metricPort),
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
 		LeaderElection:         strings.ToLower(os.Getenv("ENABLE_LEADER_ELECTION")) == "true",
