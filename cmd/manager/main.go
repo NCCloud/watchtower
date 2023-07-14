@@ -8,7 +8,6 @@ import (
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/models"
 	"k8s.io/apimachinery/pkg/runtime"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -16,15 +15,11 @@ import (
 )
 
 const (
-	port       = 9444
 	metricPort = 8083
 	healthPort = 8084
 )
 
 func main() {
-	scheme := runtime.NewScheme()
-	logger := zap.New()
-
 	config, configErr := models.NewConfig("./config.yaml")
 	if configErr != nil {
 		panic(configErr)
@@ -36,14 +31,12 @@ func main() {
 	}
 
 	manager, managerErr := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Port:                   port,
-		Scheme:                 scheme,
-		Logger:                 logger,
+		Scheme:                 runtime.NewScheme(),
+		Logger:                 zap.New(),
 		MetricsBindAddress:     fmt.Sprintf(":%d", metricPort),
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
 		LeaderElection:         strings.ToLower(os.Getenv("ENABLE_LEADER_ELECTION")) == "true",
 		LeaderElectionID:       "watchtower.spaceship.com",
-		CertDir:                "/tmp/k8s-webhook-server/serving-certs",
 	})
 	if managerErr != nil {
 		panic(managerErr)
