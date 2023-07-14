@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/models"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,7 +15,6 @@ import (
 )
 
 const (
-	port       = 9444
 	metricPort = 8083
 	healthPort = 8084
 )
@@ -43,10 +40,6 @@ func main() {
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
 		LeaderElection:         strings.ToLower(os.Getenv("ENABLE_LEADER_ELECTION")) == "true",
 		LeaderElectionID:       "watchtower.spaceship.com",
-		WebhookServer: webhook.NewServer(webhook.Options{
-			Port:    port,
-			CertDir: "/tmp/k8s-webhook-server/serving-certs",
-		}),
 	})
 	if managerErr != nil {
 		panic(managerErr)
