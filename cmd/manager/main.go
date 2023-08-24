@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/models"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,9 +33,11 @@ func main() {
 	}
 
 	manager, managerErr := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 runtime.NewScheme(),
-		Logger:                 zap.New(),
-		MetricsBindAddress:     fmt.Sprintf(":%d", metricPort),
+		Scheme: runtime.NewScheme(),
+		Logger: zap.New(),
+		Metrics: server.Options{
+			BindAddress: fmt.Sprintf(":%d", metricPort),
+		},
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
 		LeaderElection:         strings.ToLower(os.Getenv("ENABLE_LEADER_ELECTION")) == "true",
 		LeaderElectionID:       "watchtower.spaceship.com",

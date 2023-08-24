@@ -1,4 +1,4 @@
-export GOLANGCI_LINT_VERSION="v1.53.3"
+export GOLANGCI_LINT_VERSION="v1.54.2"
 
 prerequisites() {
   if ! command -v golangci-lint &>/dev/null; then
