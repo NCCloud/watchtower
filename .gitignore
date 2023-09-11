@@ -3,3 +3,5 @@
 *.out
 bin
 chart-template.yaml
+.vscode
+cmd/manager/__debug_bin
