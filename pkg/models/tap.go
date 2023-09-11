@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"regexp"
 	"text/template"
 
@@ -89,7 +88,7 @@ func (r Tap) Compile() CompiledTap {
 		}
 
 		if r.Filter.Object != nil {
-			compiledTap.Filter.Object.Key = utils.TemplateParse(fmt.Sprintf("{{%s}}", r.Filter.Object.Key))
+			compiledTap.Filter.Object.Key = utils.TemplateParse(r.Filter.Object.Key)
 			compiledTap.Filter.Object.Value = r.Filter.Object.Value
 			compiledTap.Filter.Object.Operand = r.Filter.Object.Operator
 		}

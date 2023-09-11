@@ -84,7 +84,7 @@ taps:
     name: "^.*$-token-.*$"
     namespace: "default"
     object:
-      key: ".type"
+      key: "{{.type}}"
       operator: "=="
       value: "kubernetes.io/service-account-token"
 sinks:
