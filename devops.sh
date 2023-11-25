@@ -1,11 +1,11 @@
-export GOLANGCI_LINT_VERSION="v1.54.2"
+export GOLANGCI_LINT_VERSION="v1.55.2"
 
 prerequisites() {
-  if ! command -v golangci-lint &>/dev/null; then
+  if [[ "$(golangci-lint --version 2>&1)" != *"$GOLANGCI_LINT_VERSION"* ]]; then
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@"${GOLANGCI_LINT_VERSION}"
   fi
-  if ! command -v gofumpt &>/dev/null; then
-    go install mvdan.cc/gofumpt@latest
+  if [[ "$(gofumpt --version 2>&1)" != *"$GOFUMPT_VERSION"* ]]; then
+     go install mvdan.cc/gofumpt@"${GOFUMPT_VERSION}"
   fi
 }
 
