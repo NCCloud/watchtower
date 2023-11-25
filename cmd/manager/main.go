@@ -33,7 +33,7 @@ func main() {
 			BindAddress: fmt.Sprintf(":%d", metricPort),
 		},
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
-		LeaderElection:         config.EnableLeaderElection,
+		LeaderElection:         config.LeaderElection,
 		LeaderElectionID:       "watchtower.cloud.spaceship.com",
 	}))
 
