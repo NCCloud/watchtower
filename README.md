@@ -6,8 +6,8 @@
 ## 📖 General Information
 
 Watchtower is a Kubernetes operator that monitors changes to resources and exports them to one or more endpoints,
-like Slack, Elasticsearch, or your APIs. It filters objects based on user-specified criteria, prepares a
-template, and sends the request to the appropriate endpoint.
+like Slack, Elasticsearch, or your APIs. It listen the event and collect the object, then filter them based on user-specified criteria, prepares a
+template, and sends the request to the provided destination.
 
 ## 🚀 Deployment
 
@@ -24,10 +24,7 @@ Alternatively, you can compile and install Watchtower using any method you choos
 ## ⚙️ Configuration
 
 Watchtower's configuration is stored in the `config.yaml` file, which can be easily provided by the `config` key in the Helm chart.
-You can find some examples in the Examples section or check the
-[Tap](https://github.com/NCCloud/watchtower/blob/main/pkg/models/tap.go),
-[Sink](https://github.com/NCCloud/watchtower/blob/main/pkg/models/sink.go) and
-[Flow](https://github.com/NCCloud/watchtower/blob/main/pkg/models/flow.go) for all the fields.
+You can find a simple and advanced example in the Examples section.
 
 ## 📐 Architecture
 
@@ -57,46 +54,54 @@ This configuration allows you to send available replicas of the deployments in y
 
 ```yaml
 # config.yaml
-taps:
-- name: MyDeployments
-  kind: Deployment
-  apiVersion: apps/v1
-sinks:
-- name: MySlackWebhook
-  method: POST
-  urlTemplate: "YOUR_SLACK_WEBHOOK_URL"
-  bodyTemplate: "{\"text\":\"Name: {{ .metadata.name }}\nAvailableReplicas: {{ .status.availableReplicas }}\"}"
-flows:
-- tap: MyDeployments
-  sink: MySlackWebhook
+watchers:
+  - source:
+      apiVersion: "apps/v1"
+      kind: "Deployment"
+    destination:
+      method: "POST"
+      urlTemplate: "YOUR_SLACK_WEBHOOK_URL"
+      bodyTemplate: | 
+        {
+          "text": "{{ .metadata.name }}"
+        }
 ```
 
-#### Send Service Account Tokens to your API
+#### Send Service Account Tokens to your API (Full Configuration)
 This configuration allows you to send service account tokens in the default namespace to your API endpoints.
 
 ```yaml
 # config.yaml
-taps:
-- name: ServiceAccountTokens
-  kind: Secret
-  apiVersion: v1
-  filter:
-    name: "^.*$-token-.*$"
-    namespace: "default"
-    object:
-      key: "{{.type}}"
-      operator: "=="
-      value: "kubernetes.io/service-account-token"
-sinks:
-- name: MyAPIEndpoint
-  method: PATCH
-  urlTemplate: "YOUR_API_ENDPOINT"
-  bodyTemplate: "{\"ca.crt\":\"{{ index .data \"ca.crt\" }}\",\"token\":\"{{ index .data \"token\" }}\"}"
-  header:
-    Content-Type: application/json
-flows:
-- tap: ServiceAccountTokens
-  sink: MyAPIEndpoint
+syncPeriod: "1h"
+enableLeaderElection: false
+watchers:
+  - source:
+      apiVersion: "v1"
+      kind: "Secret"
+      concurrency: 10
+    filter:
+      event:
+        create:
+          creationTimeout: "96h"
+        update:
+          generationChanged: true
+      object:
+        name: "^.*$-token-.*$"
+        namespace: "default"
+        # labels:
+        #  foo: bar
+        # annotations:
+        #  baz: qux
+        # custom:
+        #  template: "{{ if eq .Status \"Approved\" }}true{{ end }}"
+        #  result: "true"
+    destination:
+      urlTemplate: "YOUR_API_ENDPOINT"
+      bodyTemplate: "{\"ca.crt\":\"{{ index .data \"ca.crt\" }}\",\"token\":\"{{ index .data \"token\" }}\"}"
+      method: "PATCH"
+      headers:
+        Content-Type:
+          - "application/json"
 ```
 
 ## 🏷️ Versioning

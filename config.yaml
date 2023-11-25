@@ -1,12 +1,11 @@
-taps:
-  - name: MyDeployments
-    kind: Deployment
-    apiVersion: apps/v1
-sinks:
-  - name: MySlackWebhook
-    method: POST
-    urlTemplate: "YOUR_API_ENDPOINT"
-    bodyTemplate: "{\"text\":\"Name: {{ .metadata.name }}\nAvailableReplicas: {{ .status.availableReplicas }}\"}"
-flows:
-  - tap: MyDeployments
-    sink: MySlackWebhook
+watchers:
+  - source:
+      apiVersion: "apps/v1"
+      kind: "Deployment"
+    destination:
+      method: "POST"
+      urlTemplate: "https://webhook.site/c9181128-0355-430c-9d14-907a2c493b02"
+      bodyTemplate: |
+        {
+          "text": "{{ .metadata.name }}"
+        }

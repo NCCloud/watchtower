@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"strings"
-
-	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/nccloud/watchtower/pkg"
-	"github.com/nccloud/watchtower/pkg/models"
+	"github.com/nccloud/watchtower/pkg/common"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,47 +21,30 @@ const (
 )
 
 func main() {
-	config, configErr := models.NewConfig("./config.yaml")
-	if configErr != nil {
-		panic(configErr)
-	}
-
-	compiledConfig, compiledConfigErr := config.Compile()
-	if compiledConfigErr != nil {
-		panic(compiledConfigErr)
-	}
-
-	manager, managerErr := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config := common.MustReturn(common.NewConfig("./config.yaml"))
+	logger := zap.New()
+	manager := common.MustReturn(ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: runtime.NewScheme(),
-		Logger: zap.New(),
+		Logger: logger,
+		Cache: cache.Options{
+			SyncPeriod: config.GetSyncPeriod(),
+		},
 		Metrics: server.Options{
 			BindAddress: fmt.Sprintf(":%d", metricPort),
 		},
 		HealthProbeBindAddress: fmt.Sprintf(":%d", healthPort),
-		LeaderElection:         strings.ToLower(os.Getenv("ENABLE_LEADER_ELECTION")) == "true",
-		LeaderElectionID:       "watchtower.spaceship.com",
-	})
-	if managerErr != nil {
-		panic(managerErr)
+		LeaderElection:         config.EnableLeaderElection,
+		LeaderElectionID:       "watchtower.cloud.spaceship.com",
+	}))
+
+	ctrl.SetLogger(logger)
+
+	for _, watcher := range config.Watchers {
+		watcher.Compile()
+		common.Must(pkg.NewController(manager.GetClient(), watcher).SetupWithManager(manager))
 	}
 
-	client := manager.GetClient()
-
-	for _, flow := range compiledConfig.Flows {
-		if newControllerErr := pkg.NewController(client, flow).SetupWithManager(manager); newControllerErr != nil {
-			panic(newControllerErr)
-		}
-	}
-
-	if healthCheckErr := manager.AddHealthzCheck("healthz", healthz.Ping); healthCheckErr != nil {
-		panic(healthCheckErr)
-	}
-
-	if readyCheckErr := manager.AddReadyzCheck("readyz", healthz.Ping); readyCheckErr != nil {
-		panic(readyCheckErr)
-	}
-
-	if startManagerErr := manager.Start(ctrl.SetupSignalHandler()); startManagerErr != nil {
-		panic(startManagerErr)
-	}
+	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))
+	common.Must(manager.AddHealthzCheck("readyz", healthz.Ping))
+	common.Must(manager.Start(ctrl.SetupSignalHandler()))
 }
