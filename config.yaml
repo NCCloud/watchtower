@@ -4,7 +4,7 @@ watchers:
       kind: "Deployment"
     destination:
       method: "POST"
-      urlTemplate: "https://webhook.site/c9181128-0355-430c-9d14-907a2c493b02"
+      urlTemplate: "YOUR_SLACK_WEBHOOK_URL"
       bodyTemplate: |
         {
           "text": "{{ .metadata.name }}"
