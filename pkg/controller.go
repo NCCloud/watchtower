@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/nccloud/watchtower/pkg/common"
@@ -71,12 +70,12 @@ func (r *Controller) Filter(obj client.Object) (bool, error) {
 	}
 
 	if r.watcher.Filter.Object.Labels != nil &&
-		!reflect.DeepEqual(r.watcher.Filter.Object.Labels, obj.GetLabels()) {
+		!common.MapContains(obj.GetLabels(), *r.watcher.Filter.Object.Labels) {
 		return true, nil
 	}
 
 	if r.watcher.Filter.Object.Annotations != nil &&
-		!reflect.DeepEqual(r.watcher.Filter.Object.Annotations, obj.GetAnnotations()) {
+		!common.MapContains(obj.GetAnnotations(), *r.watcher.Filter.Object.Annotations) {
 		return true, nil
 	}
 
