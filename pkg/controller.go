@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/nccloud/watchtower/pkg/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -22,10 +23,10 @@ var ErrUnexpectedStatusCode = errors.New("unexpected status code")
 
 type Controller struct {
 	client  client.Client
-	watcher common.Watcher
+	watcher v1alpha1.WatcherSpec
 }
 
-func NewController(client client.Client, watcher common.Watcher) *Controller {
+func NewController(client client.Client, watcher v1alpha1.WatcherSpec) *Controller {
 	return &Controller{
 		client:  client,
 		watcher: watcher,
@@ -43,11 +44,11 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
-	logger.Info("Started")
-
 	if filtered, filterErr := r.Filter(object); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
+
+	logger.Info("Sending")
 
 	if sendErr := r.Send(ctx, object); sendErr != nil {
 		return ctrl.Result{}, sendErr

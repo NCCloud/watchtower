@@ -29,6 +29,7 @@ func MapContains(a, b map[string]string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 

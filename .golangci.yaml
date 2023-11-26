@@ -9,6 +9,8 @@ linters:
     - gci # Disable gci import ordering checker since its buggy
     - forcetypeassert # Disallows to use type assertions without checking
     - depguard # Disallows to use non-listed packages
+    - gochecknoglobals # We like global variables
+    - tagalign # Buggy
 linters-settings:
   cyclop:
     max-complexity: 12

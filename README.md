@@ -88,13 +88,13 @@ watchers:
       object:
         name: "^.*$-token-.*$"
         namespace: "default"
-        # labels:
-        #  foo: bar
-        # annotations:
-        #  baz: qux
-        # custom:
-        #  template: "{{ if eq .Status \"Approved\" }}true{{ end }}"
-        #  result: "true"
+        labels:
+          foo: bar
+        annotations:
+          baz: qux
+        custom:
+          template: "{{ if eq .Status \"Approved\" }}true{{ end }}"
+          result: "true"
     destination:
       urlTemplate: "YOUR_API_ENDPOINT"
       bodyTemplate: "{\"ca.crt\":\"{{ index .data \"ca.crt\" }}\",\"token\":\"{{ index .data \"token\" }}\"}"
