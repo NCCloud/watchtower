@@ -115,7 +115,7 @@ To see the available versions, check the [tags on this repository](https://githu
 ## ⭐️ Documentation
 
 For more information about the functionality provided by this library, refer to the 
-[GoDoc](http://godoc.org/github.com/nccloud/watchtower) documentation and [CRD Documentation](https://github.com/NCCloud/tree/main/docs/api.md).
+[GoDoc Documentation](http://godoc.org/github.com/nccloud/watchtower) and [CRD Documentation](https://github.com/NCCloud/tree/main/docs/api.md).
 
 ## 🤝 Contribution
 
