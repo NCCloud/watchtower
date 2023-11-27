@@ -51,8 +51,8 @@ func main() {
 
 	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).WaitForSchedule().Do(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
-		refreshErr := RefreshWatchers(interruptCtx, kubeClient)
-		if refreshErr != nil {
+
+		if refreshErr := RefreshWatchers(interruptCtx, kubeClient); refreshErr != nil {
 			logger.Error(refreshErr, "An error occurred while refreshing watchers")
 
 			return
