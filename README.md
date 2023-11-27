@@ -32,7 +32,7 @@ Watchtower is based on the [controller-runtime](https://github.com/kubernetes-si
 It allows you to dynamically watch for events, filter, render, and send them to your API endpoints with some configurations.
 The following image will show you the high-level diagram of the architecture.
 
-![Architecture](https://user-images.githubusercontent.com/23269628/223709739-b6567e76-cb39-49a3-a55b-237a9c57c2dd.jpg)
+![Architecture](https://github.com/NCCloud/watchtower/assets/23269628/8016a7ce-0d94-4b82-99d2-093bb7bf2cfd)
 
 ## 🛠 Development
 
