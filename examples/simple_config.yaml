@@ -10,7 +10,5 @@ spec:
   destination:
     method: "POST"
     urlTemplate: "YOUR_ENDPOINT_URL"
-    bodyTemplate: |
-      {
-        "text": "{{ .metadata.name }}"
-      }
+    bodyTemplate: | 
+      { "text": "{{ .metadata.name }}" }
