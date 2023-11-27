@@ -148,22 +148,24 @@ spec:
               valuesFrom:
                 description: ValuesFrom allows you to merge variables from references.
                 properties:
-                  secret:
-                    description: Secret is the reference that will be merged from.
-                    properties:
-                      key:
-                        type: string
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - key
-                    - name
-                    - namespace
-                    type: object
+                  secrets:
+                    description: Secrets are the references that will be merged from.
+                    items:
+                      properties:
+                        key:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                      - key
+                      - name
+                      - namespace
+                      type: object
+                    type: array
                 required:
-                - secret
+                - secrets
                 type: object
             required:
             - destination

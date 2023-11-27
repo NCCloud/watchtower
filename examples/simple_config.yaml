@@ -7,18 +7,10 @@ spec:
   source:
     apiVersion: "apps/v1"
     kind: "Deployment"
-  filter:
-    object:
-      namespace: "default"
   destination:
     method: "POST"
-    urlTemplate: ""
+    urlTemplate: "YOUR_ENDPOINT_URL"
     bodyTemplate: |
       {
         "text": "{{ .metadata.name }}"
       }
-  valuesFrom:
-    secretRef:
-      name: "asd"
-      namesace: "sdfd"
-      key: "ggg"

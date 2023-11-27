@@ -107,7 +107,7 @@ _Appears in:_
 | `result` _string_ | Result is the result that will be used to compare with the result of the Template. |
 
 
-#### SecretKeyRef
+#### SecretKeySelector
 
 
 
@@ -164,7 +164,7 @@ _Appears in:_
 
 | Field | Description |
 | --- | --- |
-| `secret` _[SecretKeyRef](#secretkeyref)_ | Secret is the reference that will be merged from. |
+| `secrets` _[SecretKeySelector](#secretkeyselector) array_ | Secrets are the references that will be merged from. |
 
 
 #### Watcher

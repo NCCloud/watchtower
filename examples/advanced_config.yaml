@@ -1,0 +1,41 @@
+apiVersion: cloud.spaceship.com/v1alpha1
+kind: Watcher
+metadata:
+  name: website-1
+  namespace: default
+spec:
+  source:
+    apiVersion: "apps/v1"
+    kind: "Deployment"
+    concurrency: 1
+  filter:
+    event:
+      create:
+        creationTimeout: "1h"
+      update:
+        generationChanged: true
+    object:
+      name: ".*website.*"
+      namespace: "customer-namespace.*"
+      labels:
+        "foo": "bar"
+      annotations:
+        "baz": "qux"
+      custom:
+        template: "{{ if gte .spec.foo 2 }}true{{ end }}"
+        result: "true"
+  destination:
+    urlTemplate: "http://test.com/{{ .spec.Id }}"
+    method: "POST"
+    bodyTemplate: |
+      {
+        "text": "{{ .metadata.name }}"
+      }
+    headers:
+      "Content-Type":
+        - "application/json"
+  valuesFrom:
+    - secrets:
+        - key: "foo"
+          name: "test"
+          namespace: "default"
