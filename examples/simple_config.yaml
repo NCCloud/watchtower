@@ -1,3 +1,13 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-secret
+  namespace: default
+type: Opaque
+data:
+  url: "ZGVzdGluYXRpb246CiAgdXJsVGVtcGxhdGU6ICJodHRwczovL3dlYmhvb2suc2l0ZS9jOTE4MTEyOC0wMzU1LTQzMGMtOWQxNC05MDdhMmM0OTNiMDIiCg=="
+---
 apiVersion: cloud.spaceship.com/v1alpha1
 kind: Watcher
 metadata:
@@ -12,3 +22,8 @@ spec:
     urlTemplate: "YOUR_ENDPOINT_URL"
     bodyTemplate: | 
       { "text": "{{ .metadata.name }}" }
+  valuesFrom:
+    secrets:
+      - key: url
+        name: my-secret
+        namespace: default

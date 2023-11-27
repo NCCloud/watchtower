@@ -39,6 +39,7 @@ var (
 )
 
 func main() {
+	ctrl.SetLogger(logger)
 	common.Must(clientgoscheme.AddToScheme(scheme))
 	common.Must(v1alpha1.AddToScheme(scheme))
 
@@ -81,10 +82,12 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 	watchers = []v1alpha1.WatcherSpec{}
 
 	for _, watcher := range watcherList.Items {
-		for _, secretKeySelector := range watcher.Spec.ValuesFrom.Secrets {
+		watcherSpec := watcher.Spec
+
+		for _, secretKeySelector := range watcherSpec.ValuesFrom.Secrets {
 			var (
-				secret         v1.Secret
-				specFromSecret v1alpha1.WatcherSpec
+				secret                v1.Secret
+				watcherSpecFromSecret v1alpha1.WatcherSpec
 			)
 
 			if getErr := kubeClient.Get(ctx, types.NamespacedName{
@@ -94,16 +97,16 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 			}
 
 			if unmarshallErr := yaml.Unmarshal(secret.Data[secretKeySelector.Key],
-				&specFromSecret); unmarshallErr != nil {
+				&watcherSpecFromSecret); unmarshallErr != nil {
 				return unmarshallErr
 			}
 
-			if mergeErr := mergo.Merge(watcher.Spec, specFromSecret); mergeErr != nil {
+			if mergeErr := mergo.Merge(&watcherSpec, watcherSpecFromSecret, mergo.WithOverride); mergeErr != nil {
 				return mergeErr
 			}
 		}
 
-		watchers = append(watchers, watcher.Spec)
+		watchers = append(watchers, watcherSpec)
 	}
 
 	return nil
