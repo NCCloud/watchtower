@@ -50,7 +50,7 @@ go run cmd/manager/main.go
 ```
 
 ## 📖 Examples
-#### Send Deployment Statuses to Slack
+#### Send Deployment Statuses to Slack (Simple Configuration)
 This configuration allows you to send available replicas of the deployments in your cluster to a Slack channel via webhook.
 
 ```yaml
