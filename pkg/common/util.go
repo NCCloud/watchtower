@@ -1,11 +1,10 @@
-package utils
+package common
 
 import (
 	"bytes"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -21,4 +20,31 @@ func TemplateExecuteForObject(template *template.Template, obj client.Object) ([
 	}
 
 	return buffer.Bytes(), nil
+}
+
+func MapContains(a, b map[string]string) bool {
+	for key, val := range b {
+		valA, contains := a[key]
+		if !contains || valA != val {
+			return false
+		}
+	}
+
+	return true
+}
+
+func Pointer[T any](t T) *T {
+	return &t
+}
+
+func Must(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func MustReturn[T any](t T, err error) T {
+	Must(err)
+
+	return t
 }

@@ -1,0 +1,176 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+  name: watchers.cloud.spaceship.com
+spec:
+  group: cloud.spaceship.com
+  names:
+    kind: Watcher
+    listKind: WatcherList
+    plural: watchers
+    singular: watcher
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              destination:
+                description: Destination sets where the rendered objects will be sending.
+                properties:
+                  bodyTemplate:
+                    description: BodyTemplate is the template field to set what will
+                      be sent the destination.
+                    type: string
+                  headers:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: Method is the HTTP headers will be used while calling
+                      the destination endpoints.
+                    type: object
+                  method:
+                    description: Method is the HTTP method will be used while calling
+                      the destination endpoints.
+                    type: string
+                  urlTemplate:
+                    description: URLTemplate is the template field to set where will
+                      be the destination.
+                    type: string
+                required:
+                - bodyTemplate
+                - method
+                - urlTemplate
+                type: object
+              filter:
+                description: Filter helps you to filter objects.
+                properties:
+                  event:
+                    description: Event allows you to set event based filters
+                    properties:
+                      create:
+                        description: Create allows you to set create event based filters
+                        properties:
+                          creationTimeout:
+                            description: CreationTimeout sets what will be the maximum
+                              duration can past for the objects in create queue. It
+                              also helps to minimize number of object that will be
+                              re-sent when application restarts.
+                            type: string
+                        type: object
+                      update:
+                        description: Update allows you to set update event based filters
+                        properties:
+                          generationChanged:
+                            description: GenerationChanged sets if generation should
+                              be different or same according to value. By default,
+                              It's not in use.
+                            type: boolean
+                        type: object
+                    type: object
+                  object:
+                    description: Object allows you to set object based filters
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations are the labels to filter object by
+                          annotation.
+                        type: object
+                      custom:
+                        description: Custom is the most advanced way of filtering
+                          object by their contents and multiple fields by templating.
+                        properties:
+                          result:
+                            description: Result is the result that will be used to
+                              compare with the result of the Template.
+                            type: string
+                          template:
+                            description: Template is the template that will be used
+                              to compare result with Result and filter accordingly.
+                            type: string
+                        required:
+                        - result
+                        - template
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels are the labels to filter object by labels.
+                        type: object
+                      name:
+                        description: Name is the regular expression to filter object
+                          Its name.
+                        type: string
+                      namespace:
+                        description: Namespace is the regular expression to filter
+                          object Its namespace.
+                        type: string
+                    type: object
+                type: object
+              source:
+                description: Source defines the source objects of the watching process.
+                properties:
+                  apiVersion:
+                    description: APIVersion is api version of the object like apps/v1,
+                      v1 etc.
+                    type: string
+                  concurrency:
+                    description: Concurrency is how many concurrent workers will be
+                      working on processing this source.
+                    type: integer
+                  kind:
+                    description: Kind is the kind of the object like Deployment, Secret,
+                      MyCustomResource etc.
+                    type: string
+                required:
+                - apiVersion
+                - kind
+                type: object
+              valuesFrom:
+                description: ValuesFrom allows you to merge variables from references.
+                properties:
+                  secrets:
+                    description: Secrets are the references that will be merged from.
+                    items:
+                      properties:
+                        key:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required:
+                      - key
+                      - name
+                      - namespace
+                      type: object
+                    type: array
+                required:
+                - secrets
+                type: object
+            required:
+            - destination
+            - source
+            type: object
+        type: object
+    served: true
+    storage: true

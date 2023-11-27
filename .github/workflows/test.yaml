@@ -1,5 +1,4 @@
 name: Test
-
 on:
   pull_request:
   push:
@@ -13,14 +12,18 @@ env:
 jobs:
   tests:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Install Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      - name: Validate
+        run: |
+          ./devops.sh generate
+          git diff --exit-code
       - name: Coverage Report
         uses: gwatts/go-coverage-action@v1
         with:
@@ -29,3 +32,5 @@ jobs:
           ignore-pattern: |
             .*cmd.*
             .*mocks.*
+            .*apis.*
+            .*generated.*
