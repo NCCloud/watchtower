@@ -145,6 +145,26 @@ spec:
                 - apiVersion
                 - kind
                 type: object
+              valuesFrom:
+                description: ValuesFrom allows you to merge variables from references.
+                properties:
+                  secret:
+                    description: Secret is the reference that will be merged from.
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - key
+                    - name
+                    - namespace
+                    type: object
+                required:
+                - secret
+                type: object
             required:
             - destination
             - source

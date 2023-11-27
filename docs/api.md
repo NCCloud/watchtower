@@ -107,6 +107,22 @@ _Appears in:_
 | `result` _string_ | Result is the result that will be used to compare with the result of the Template. |
 
 
+#### SecretKeyRef
+
+
+
+
+
+_Appears in:_
+- [ValuesFrom](#valuesfrom)
+
+| Field | Description |
+| --- | --- |
+| `name` _string_ |  |
+| `namespace` _string_ |  |
+| `key` _string_ |  |
+
+
 #### Source
 
 
@@ -135,6 +151,20 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `generationChanged` _boolean_ | GenerationChanged sets if generation should be different or same according to value. By default, It's not in use. |
+
+
+#### ValuesFrom
+
+
+
+
+
+_Appears in:_
+- [WatcherSpec](#watcherspec)
+
+| Field | Description |
+| --- | --- |
+| `secret` _[SecretKeyRef](#secretkeyref)_ | Secret is the reference that will be merged from. |
 
 
 #### Watcher
@@ -169,5 +199,6 @@ _Appears in:_
 | `source` _[Source](#source)_ | Source defines the source objects of the watching process. |
 | `filter` _[Filter](#filter)_ | Filter helps you to filter objects. |
 | `destination` _[Destination](#destination)_ | Destination sets where the rendered objects will be sending. |
+| `valuesFrom` _[ValuesFrom](#valuesfrom)_ | ValuesFrom allows you to merge variables from references. |
 
 

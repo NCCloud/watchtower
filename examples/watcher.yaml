@@ -17,3 +17,8 @@ spec:
       {
         "text": "{{ .metadata.name }}"
       }
+  valuesFrom:
+    secretRef:
+      name: "asd"
+      namesace: "sdfd"
+      key: "ggg"

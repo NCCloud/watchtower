@@ -3,12 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/go-co-op/gocron"
+	"github.com/imdario/mergo"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/nccloud/watchtower/pkg/common"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -16,15 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"time"
-)
-
-const (
-	metricPort = 8083
-	healthPort = 8084
 )
 
 var (
+	metricPort   = 8083
+	healthPort   = 8084
 	logger       = zap.New()
 	config       = common.NewConfig()
 	scheme       = runtime.NewScheme()
@@ -44,13 +46,18 @@ func main() {
 		Scheme: scheme,
 	}))
 
-	RefreshWatchers(context.Background(), kubeClient)
+	common.Must(RefreshWatchers(context.Background(), kubeClient))
 
 	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).WaitForSchedule().Do(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
-		RefreshWatchers(interruptCtx, kubeClient)
+		refreshErr := RefreshWatchers(interruptCtx, kubeClient)
+		if refreshErr != nil {
+			logger.Error(refreshErr, "An error occurred while refreshing watchers")
+
+			return
+		}
 		if hash != common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil)) {
-			logger.Info("Restarting watchtower")
+			logger.Info("Restarting")
 			restart()
 		}
 	}))
@@ -65,19 +72,44 @@ func main() {
 	scheduler.Stop()
 }
 
-func RefreshWatchers(ctx context.Context, kubeClient client.Client) {
+func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 	watcherList := v1alpha1.WatcherList{}
-	common.Must(kubeClient.List(ctx, &watcherList))
-	
+	if listErr := kubeClient.List(ctx, &watcherList); listErr != nil {
+		return listErr
+	}
+
 	watchers = []v1alpha1.WatcherSpec{}
+
 	for _, watcher := range watcherList.Items {
+		for _, secretKeySelector := range watcher.Spec.ValuesFrom.Secrets {
+			var (
+				secret         v1.Secret
+				specFromSecret v1alpha1.WatcherSpec
+			)
+
+			if getErr := kubeClient.Get(ctx, types.NamespacedName{
+				Name: secretKeySelector.Name, Namespace: secretKeySelector.Namespace,
+			}, &secret); getErr != nil {
+				return getErr
+			}
+
+			if unmarshallErr := yaml.Unmarshal(secret.Data[secretKeySelector.Key],
+				&specFromSecret); unmarshallErr != nil {
+				return unmarshallErr
+			}
+
+			if mergeErr := mergo.Merge(watcher.Spec, specFromSecret); mergeErr != nil {
+				return mergeErr
+			}
+		}
+
 		watchers = append(watchers, watcher.Spec)
 	}
+
+	return nil
 }
 
 func StartManager(ctx context.Context, watchers []v1alpha1.WatcherSpec) {
-	ctrl.SetLogger(logger)
-
 	manager := common.MustReturn(ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Logger: logger,
@@ -88,8 +120,7 @@ func StartManager(ctx context.Context, watchers []v1alpha1.WatcherSpec) {
 			BindAddress: fmt.Sprintf(":%d", metricPort),
 		},
 		HealthProbeBindAddress:        fmt.Sprintf(":%d", healthPort),
-		LeaderElection:                true,
-		LeaderElectionNamespace:       "default",
+		LeaderElection:                config.EnableLeaderElection,
 		LeaderElectionID:              "watchtower.cloud.spaceship.com",
 		LeaderElectionReleaseOnCancel: true,
 	}))
@@ -102,6 +133,4 @@ func StartManager(ctx context.Context, watchers []v1alpha1.WatcherSpec) {
 	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))
 	common.Must(manager.AddHealthzCheck("readyz", healthz.Ping))
 	common.Must(manager.Start(ctx))
-
-	print("\n\n\n\n\n\n")
 }
