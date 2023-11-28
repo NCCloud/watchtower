@@ -23,10 +23,10 @@ var ErrUnexpectedStatusCode = errors.New("unexpected status code")
 
 type Controller struct {
 	client  client.Client
-	watcher v1alpha1.WatcherSpec
+	watcher *v1alpha1.Watcher
 }
 
-func NewController(client client.Client, watcher v1alpha1.WatcherSpec) *Controller {
+func NewController(client client.Client, watcher *v1alpha1.Watcher) *Controller {
 	return &Controller{
 		client:  client,
 		watcher: watcher,
@@ -37,57 +37,57 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var (
 		start  = time.Now()
 		logger = log.FromContext(ctx)
-		object = r.watcher.Source.NewObject()
+		object = r.watcher.Spec.Source.NewObject()
 	)
 
 	if getErr := r.client.Get(ctx, req.NamespacedName, object); getErr != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
+	logger.Info("Started")
+
 	if filtered, filterErr := r.Filter(object); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
-
-	logger.Info("Sending")
 
 	if sendErr := r.Send(ctx, object); sendErr != nil {
 		return ctrl.Result{}, sendErr
 	}
 
-	logger.Info(fmt.Sprintf("Finished in %s", time.Since(start)))
+	logger.Info("Finished", "duration", time.Since(start).String())
 
 	return ctrl.Result{}, nil
 }
 
 func (r *Controller) Filter(obj client.Object) (bool, error) {
-	if r.watcher.Filter.Object.Name != nil &&
-		!r.watcher.Filter.Object.Compiled.Name.MatchString(obj.GetName()) {
+	if r.watcher.Spec.Filter.Object.Name != nil &&
+		!r.watcher.Spec.Filter.Object.Compiled.Name.MatchString(obj.GetName()) {
 		return true, nil
 	}
 
-	if r.watcher.Filter.Object.Namespace != nil &&
-		!r.watcher.Filter.Object.Compiled.Namespace.MatchString(obj.GetNamespace()) {
+	if r.watcher.Spec.Filter.Object.Namespace != nil &&
+		!r.watcher.Spec.Filter.Object.Compiled.Namespace.MatchString(obj.GetNamespace()) {
 		return true, nil
 	}
 
-	if r.watcher.Filter.Object.Labels != nil &&
-		!common.MapContains(obj.GetLabels(), *r.watcher.Filter.Object.Labels) {
+	if r.watcher.Spec.Filter.Object.Labels != nil &&
+		!common.MapContains(obj.GetLabels(), *r.watcher.Spec.Filter.Object.Labels) {
 		return true, nil
 	}
 
-	if r.watcher.Filter.Object.Annotations != nil &&
-		!common.MapContains(obj.GetAnnotations(), *r.watcher.Filter.Object.Annotations) {
+	if r.watcher.Spec.Filter.Object.Annotations != nil &&
+		!common.MapContains(obj.GetAnnotations(), *r.watcher.Spec.Filter.Object.Annotations) {
 		return true, nil
 	}
 
-	if r.watcher.Filter.Object.Custom != nil {
+	if r.watcher.Spec.Filter.Object.Custom != nil {
 		result, executeErr := common.TemplateExecuteForObject(
-			r.watcher.Filter.Object.Custom.Compiled.Template, obj)
+			r.watcher.Spec.Filter.Object.Custom.Compiled.Template, obj)
 		if executeErr != nil {
 			return true, executeErr
 		}
 
-		if string(result) != r.watcher.Filter.Object.Custom.Result {
+		if string(result) != r.watcher.Spec.Filter.Object.Custom.Result {
 			return true, nil
 		}
 	}
@@ -96,23 +96,23 @@ func (r *Controller) Filter(obj client.Object) (bool, error) {
 }
 
 func (r *Controller) Send(ctx context.Context, obj client.Object) error {
-	url, urlErr := common.TemplateExecuteForObject(r.watcher.Destination.Compiled.URLTemplate, obj)
+	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
 	if urlErr != nil {
 		return urlErr
 	}
 
-	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Destination.Compiled.BodyTemplate, obj)
+	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.BodyTemplate, obj)
 	if bodyErr != nil {
 		return bodyErr
 	}
 
-	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Destination.Method,
+	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Spec.Destination.Method,
 		string(url), bytes.NewReader(body))
 	if requestErr != nil {
 		return requestErr
 	}
 
-	request.Header = r.watcher.Destination.Headers
+	request.Header = r.watcher.Spec.Destination.Headers
 
 	doRequest, doRequestErr := http.DefaultClient.Do(request)
 	if doRequestErr != nil {
@@ -131,16 +131,16 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(event event.CreateEvent) bool {
-				if r.watcher.Filter.Event.Create.CreationTimeout != nil {
+				if r.watcher.Spec.Filter.Event.Create.CreationTimeout != nil {
 					return event.Object.GetCreationTimestamp().
-						Add(r.watcher.Filter.Event.Create.Compiled.CreationTimeout).After(time.Now())
+						Add(r.watcher.Spec.Filter.Event.Create.Compiled.CreationTimeout).After(time.Now())
 				}
 
 				return true
 			},
 			UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-				if r.watcher.Filter.Event.Update.GenerationChanged != nil {
-					if *r.watcher.Filter.Event.Update.GenerationChanged {
+				if r.watcher.Spec.Filter.Event.Update.GenerationChanged != nil {
+					if *r.watcher.Spec.Filter.Event.Update.GenerationChanged {
 						return updateEvent.ObjectOld.GetGeneration() != updateEvent.ObjectNew.GetGeneration()
 					}
 
@@ -151,8 +151,8 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			},
 		}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.watcher.GetConcurrency(),
+			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
 		}).
-		For(r.watcher.Source.NewObject()).
+		For(r.watcher.Spec.Source.NewObject()).
 		Complete(r)
 }

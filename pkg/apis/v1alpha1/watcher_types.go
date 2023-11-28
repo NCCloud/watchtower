@@ -13,6 +13,7 @@ import (
 )
 
 //+kubebuilder:object:root=true
+//+kubebuilder:resource:scope=Cluster
 
 type Watcher struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -21,20 +22,28 @@ type Watcher struct {
 	Spec WatcherSpec `json:"spec,omitempty"`
 }
 
+//+kubebuilder:object:root=true
+
+type WatcherList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Watcher `json:"items"`
+}
+
 type WatcherSpec struct {
 	// Source defines the source objects of the watching process.
-	Source Source `json:"source" yaml:"source"`
-	// Filter helps you to filter objects.
+	Source Source `json:"source,omitempty" yaml:"source"`
+	// Filter helps filter objects during the watching process.
 	Filter Filter `json:"filter,omitempty" yaml:"filter"`
-	// Destination sets where the rendered objects will be sending.
-	Destination Destination `json:"destination" yaml:"destination"`
-	// ValuesFrom allows you to merge variables from references.
+	// Destination sets where the rendered objects will be sent.
+	Destination Destination `json:"destination,omitempty" yaml:"destination"`
+	// ValuesFrom allows merging variables from references.
 	ValuesFrom ValuesFrom `json:"valuesFrom,omitempty"`
 }
 
 type ValuesFrom struct {
 	// Secrets are the references that will be merged from.
-	Secrets []SecretKeySelector `json:"secrets"`
+	Secrets []SecretKeySelector `json:"secrets,omitempty"`
 }
 
 type SecretKeySelector struct {
@@ -45,9 +54,9 @@ type SecretKeySelector struct {
 
 type Source struct {
 	// APIVersion is api version of the object like apps/v1, v1 etc.
-	APIVersion string `json:"apiVersion" yaml:"apiVersion"`
+	APIVersion string `json:"apiVersion,omitempty" yaml:"apiVersion"`
 	// Kind is the kind of the object like Deployment, Secret, MyCustomResource etc.
-	Kind string `json:"kind" yaml:"kind"`
+	Kind string `json:"kind,omitempty" yaml:"kind"`
 	// Concurrency is how many concurrent workers will be working on processing this source.
 	Concurrency *int `json:"concurrency,omitempty" yaml:"concurrency"`
 }
@@ -99,9 +108,9 @@ type ObjectFilter struct {
 
 type ObjectFilterCustom struct {
 	// Template is the template that will be used to compare result with Result and filter accordingly.
-	Template string `json:"template" yaml:"template"`
+	Template string `json:"template,omitempty" yaml:"template"`
 	// Result is the result that will be used to compare with the result of the Template.
-	Result   string `json:"result" yaml:"result"`
+	Result   string `json:"result,omitempty" yaml:"result"`
 	Compiled struct {
 		Template *template.Template
 	} `json:"-"`
@@ -109,11 +118,11 @@ type ObjectFilterCustom struct {
 
 type Destination struct {
 	// URLTemplate is the template field to set where will be the destination.
-	URLTemplate string `json:"urlTemplate" yaml:"utlTemplate"`
+	URLTemplate string `json:"urlTemplate,omitempty" yaml:"urlTemplate"`
 	// BodyTemplate is the template field to set what will be sent the destination.
-	BodyTemplate string `json:"bodyTemplate" yaml:"bodyTemplate"`
+	BodyTemplate string `json:"bodyTemplate,omitempty" yaml:"bodyTemplate"`
 	// Method is the HTTP method will be used while calling the destination endpoints.
-	Method string `json:"method" yaml:"method"`
+	Method string `json:"method,omitempty" yaml:"method"`
 	// Method is the HTTP headers will be used while calling the destination endpoints.
 	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers"`
 	Compiled struct {
@@ -139,34 +148,35 @@ func (w *WatcherSpec) GetConcurrency() int {
 	return 1
 }
 
-func (w *WatcherSpec) Compile() {
-	if w.Filter.Object.Custom != nil {
-		w.Filter.Object.Custom.Compiled.Template = common.TemplateParse(w.Filter.Object.Custom.Template)
+func (w *Watcher) Compile() *Watcher {
+	newWatcher := w.DeepCopy()
+
+	if newWatcher.Spec.Filter.Object.Custom != nil {
+		newWatcher.Spec.Filter.Object.Custom.Compiled.Template = common.
+			TemplateParse(newWatcher.Spec.Filter.Object.Custom.Template)
 	}
 
-	if w.Filter.Object.Name != nil {
-		w.Filter.Object.Compiled.Name = regexp.MustCompile(*w.Filter.Object.Name)
+	if newWatcher.Spec.Filter.Object.Name != nil {
+		newWatcher.Spec.Filter.Object.Compiled.Name = regexp.
+			MustCompile(*newWatcher.Spec.Filter.Object.Name)
 	}
 
-	if w.Filter.Object.Namespace != nil {
-		w.Filter.Object.Compiled.Namespace = regexp.MustCompile(*w.Filter.Object.Namespace)
+	if newWatcher.Spec.Filter.Object.Namespace != nil {
+		newWatcher.Spec.Filter.Object.Compiled.Namespace = regexp.
+			MustCompile(*newWatcher.Spec.Filter.Object.Namespace)
 	}
 
-	if w.Filter.Event.Create.CreationTimeout != nil {
-		w.Filter.Event.Create.Compiled.CreationTimeout = common.MustReturn(
-			time.ParseDuration(*w.Filter.Event.Create.CreationTimeout))
+	if newWatcher.Spec.Filter.Event.Create.CreationTimeout != nil {
+		newWatcher.Spec.Filter.Event.Create.Compiled.CreationTimeout = common.
+			MustReturn(time.ParseDuration(*newWatcher.Spec.Filter.Event.Create.CreationTimeout))
 	}
 
-	w.Destination.Compiled.URLTemplate = common.TemplateParse(w.Destination.URLTemplate)
-	w.Destination.Compiled.BodyTemplate = common.TemplateParse(w.Destination.BodyTemplate)
-}
+	newWatcher.Spec.Destination.Compiled.URLTemplate = common.
+		TemplateParse(newWatcher.Spec.Destination.URLTemplate)
+	newWatcher.Spec.Destination.Compiled.BodyTemplate = common.
+		TemplateParse(newWatcher.Spec.Destination.BodyTemplate)
 
-//+kubebuilder:object:root=true
-
-type WatcherList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Watcher `json:"items"`
+	return newWatcher
 }
 
 func init() {

@@ -35,7 +35,7 @@ var (
 	restart      context.CancelFunc
 	kubeClient   client.Client
 	scheduler    = gocron.NewScheduler(time.UTC)
-	watchers     []v1alpha1.WatcherSpec
+	watchers     []v1alpha1.Watcher
 )
 
 func main() {
@@ -49,16 +49,17 @@ func main() {
 
 	common.Must(RefreshWatchers(context.Background(), kubeClient))
 
-	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).WaitForSchedule().Do(func() {
+	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).LimitRunsTo(1).WaitForSchedule().Do(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
 
 		if refreshErr := RefreshWatchers(interruptCtx, kubeClient); refreshErr != nil {
-			logger.Error(refreshErr, "An error occurred while refreshing watchers")
+			logger.Error(refreshErr, "An error occurred while refreshing watchers.")
 
 			return
 		}
+
 		if hash != common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil)) {
-			logger.Info("Restarting")
+			logger.Info("Watchers updated, restarting")
 			restart()
 		}
 	}))
@@ -79,15 +80,15 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 		return listErr
 	}
 
-	watchers = []v1alpha1.WatcherSpec{}
+	watchers = []v1alpha1.Watcher{}
 
 	for _, watcher := range watcherList.Items {
-		watcherSpec := watcher.Spec
+		tmpWatcher := watcher
 
-		for _, secretKeySelector := range watcherSpec.ValuesFrom.Secrets {
+		for _, secretKeySelector := range tmpWatcher.Spec.ValuesFrom.Secrets {
 			var (
-				secret                v1.Secret
-				watcherSpecFromSecret v1alpha1.WatcherSpec
+				secret         v1.Secret
+				specFromSecret v1alpha1.WatcherSpec
 			)
 
 			if getErr := kubeClient.Get(ctx, types.NamespacedName{
@@ -97,22 +98,23 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 			}
 
 			if unmarshallErr := yaml.Unmarshal(secret.Data[secretKeySelector.Key],
-				&watcherSpecFromSecret); unmarshallErr != nil {
+				&specFromSecret); unmarshallErr != nil {
 				return unmarshallErr
 			}
 
-			if mergeErr := mergo.Merge(&watcherSpec, watcherSpecFromSecret, mergo.WithOverride); mergeErr != nil {
+			if mergeErr := mergo.Merge(&tmpWatcher, v1alpha1.Watcher{Spec: specFromSecret},
+				mergo.WithOverride, mergo.WithAppendSlice); mergeErr != nil {
 				return mergeErr
 			}
 		}
 
-		watchers = append(watchers, watcherSpec)
+		watchers = append(watchers, tmpWatcher)
 	}
 
 	return nil
 }
 
-func StartManager(ctx context.Context, watchers []v1alpha1.WatcherSpec) {
+func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) {
 	manager := common.MustReturn(ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Logger: logger,
@@ -129,8 +131,7 @@ func StartManager(ctx context.Context, watchers []v1alpha1.WatcherSpec) {
 	}))
 
 	for _, watcher := range watchers {
-		watcher.Compile()
-		common.Must(pkg.NewController(manager.GetClient(), watcher).SetupWithManager(manager))
+		common.Must(pkg.NewController(manager.GetClient(), watcher.Compile()).SetupWithManager(manager))
 	}
 
 	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))

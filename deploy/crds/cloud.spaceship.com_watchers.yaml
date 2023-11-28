@@ -12,7 +12,7 @@ spec:
     listKind: WatcherList
     plural: watchers
     singular: watcher
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:
@@ -33,7 +33,7 @@ spec:
           spec:
             properties:
               destination:
-                description: Destination sets where the rendered objects will be sending.
+                description: Destination sets where the rendered objects will be sent.
                 properties:
                   bodyTemplate:
                     description: BodyTemplate is the template field to set what will
@@ -55,13 +55,9 @@ spec:
                     description: URLTemplate is the template field to set where will
                       be the destination.
                     type: string
-                required:
-                - bodyTemplate
-                - method
-                - urlTemplate
                 type: object
               filter:
-                description: Filter helps you to filter objects.
+                description: Filter helps filter objects during the watching process.
                 properties:
                   event:
                     description: Event allows you to set event based filters
@@ -107,9 +103,6 @@ spec:
                             description: Template is the template that will be used
                               to compare result with Result and filter accordingly.
                             type: string
-                        required:
-                        - result
-                        - template
                         type: object
                       labels:
                         additionalProperties:
@@ -141,12 +134,9 @@ spec:
                     description: Kind is the kind of the object like Deployment, Secret,
                       MyCustomResource etc.
                     type: string
-                required:
-                - apiVersion
-                - kind
                 type: object
               valuesFrom:
-                description: ValuesFrom allows you to merge variables from references.
+                description: ValuesFrom allows merging variables from references.
                 properties:
                   secrets:
                     description: Secrets are the references that will be merged from.
@@ -164,12 +154,7 @@ spec:
                       - namespace
                       type: object
                     type: array
-                required:
-                - secrets
                 type: object
-            required:
-            - destination
-            - source
             type: object
         type: object
     served: true
