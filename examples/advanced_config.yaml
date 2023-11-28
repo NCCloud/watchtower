@@ -1,8 +1,7 @@
 apiVersion: cloud.spaceship.com/v1alpha1
 kind: Watcher
 metadata:
-  name: website-1
-  namespace: default
+  name: watcher-2
 spec:
   source:
     apiVersion: "apps/v1"
@@ -35,7 +34,7 @@ spec:
       "Content-Type":
         - "application/json"
   valuesFrom:
-    - secrets:
-        - key: "foo"
-          name: "test"
-          namespace: "default"
+    secrets:
+      - key: "foo"
+        name: "test"
+        namespace: "default"

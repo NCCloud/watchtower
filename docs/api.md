@@ -197,8 +197,8 @@ _Appears in:_
 | Field | Description |
 | --- | --- |
 | `source` _[Source](#source)_ | Source defines the source objects of the watching process. |
-| `filter` _[Filter](#filter)_ | Filter helps you to filter objects. |
-| `destination` _[Destination](#destination)_ | Destination sets where the rendered objects will be sending. |
-| `valuesFrom` _[ValuesFrom](#valuesfrom)_ | ValuesFrom allows you to merge variables from references. |
+| `filter` _[Filter](#filter)_ | Filter helps filter objects during the watching process. |
+| `destination` _[Destination](#destination)_ | Destination sets where the rendered objects will be sent. |
+| `valuesFrom` _[ValuesFrom](#valuesfrom)_ | ValuesFrom allows merging variables from references. |
 
 
