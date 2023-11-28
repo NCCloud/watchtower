@@ -5,12 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-logr/logr"
-	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
-	"github.com/nccloud/watchtower/pkg/common"
 	"net/http"
 	"time"
-	"unsafe"
+
+	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
+	"github.com/nccloud/watchtower/pkg/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,15 +44,17 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
+	logger.Info("Started")
+
 	if filtered, filterErr := r.Filter(object); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
 
-	if sendErr := r.Send(ctx, logger, object); sendErr != nil {
+	if sendErr := r.Send(ctx, object); sendErr != nil {
 		return ctrl.Result{}, sendErr
 	}
 
-	logger.Info(fmt.Sprintf("Finished in %s", time.Since(start)))
+	logger.Info("Finished", "duration", time.Since(start).String())
 
 	return ctrl.Result{}, nil
 }
@@ -94,7 +95,7 @@ func (r *Controller) Filter(obj client.Object) (bool, error) {
 	return false, nil
 }
 
-func (r *Controller) Send(ctx context.Context, logger logr.Logger, obj client.Object) error {
+func (r *Controller) Send(ctx context.Context, obj client.Object) error {
 	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
 	if urlErr != nil {
 		return urlErr
@@ -112,8 +113,6 @@ func (r *Controller) Send(ctx context.Context, logger logr.Logger, obj client.Ob
 	}
 
 	request.Header = r.watcher.Spec.Destination.Headers
-
-	logger.Info("Sending %s bytes", unsafe.Sizeof(*request))
 
 	doRequest, doRequestErr := http.DefaultClient.Do(request)
 	if doRequestErr != nil {

@@ -1,7 +1,7 @@
 apiVersion: cloud.spaceship.com/v1alpha1
 kind: Watcher
 metadata:
-  name: watcher-2
+  name: advanced-watcher
 spec:
   source:
     apiVersion: "apps/v1"

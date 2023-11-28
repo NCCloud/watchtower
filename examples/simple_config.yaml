@@ -1,7 +1,7 @@
 apiVersion: cloud.spaceship.com/v1alpha1
 kind: Watcher
 metadata:
-  name: watcher-1
+  name: simple-watcher
   namespace: default
 spec:
   source:
