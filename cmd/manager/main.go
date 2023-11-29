@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/go-co-op/gocron"
-	"github.com/imdario/mergo"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
