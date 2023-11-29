@@ -135,6 +135,6 @@ func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) {
 	}
 
 	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))
-	common.Must(manager.AddHealthzCheck("readyz", healthz.Ping))
+	common.Must(manager.AddReadyzCheck("readyz", healthz.Ping))
 	common.Must(manager.Start(ctx))
 }
