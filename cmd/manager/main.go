@@ -49,7 +49,7 @@ func main() {
 
 	common.Must(RefreshWatchers(context.Background(), kubeClient))
 
-	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).LimitRunsTo(1).WaitForSchedule().Do(func() {
+	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).SingletonMode().WaitForSchedule().Do(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
 
 		if refreshErr := RefreshWatchers(interruptCtx, kubeClient); refreshErr != nil {
