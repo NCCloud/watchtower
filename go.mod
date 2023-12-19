@@ -4,9 +4,9 @@ go 1.21
 
 require (
 	dario.cat/mergo v1.0.0
+	github.com/go-co-op/gocron/v2 v2.1.0
 	github.com/Masterminds/sprig/v3 v3.2.3
-	github.com/caarlos0/env/v9 v9.0.0
-	github.com/go-co-op/gocron v1.37.0
+	github.com/caarlos0/env/v10 v10.0.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
@@ -34,9 +34,10 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.4.0 // indirect
+	github.com/google/uuid v1.5.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
+	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -55,16 +56,16 @@ require (
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	go.uber.org/atomic v1.10.0 // indirect
+	go.uber.org/goleak v1.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.25.0 // indirect
-	golang.org/x/crypto v0.17.0 // indirect
-	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
+	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.10.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"dario.cat/mergo"
-	"github.com/go-co-op/gocron"
+
+	"github.com/go-co-op/gocron/v2"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
@@ -34,7 +34,6 @@ var (
 	restartCtx   context.Context
 	restart      context.CancelFunc
 	kubeClient   client.Client
-	scheduler    = gocron.NewScheduler(time.UTC)
 	watchers     []v1alpha1.Watcher
 )
 
@@ -43,13 +42,13 @@ func main() {
 	common.Must(clientgoscheme.AddToScheme(scheme))
 	common.Must(v1alpha1.AddToScheme(scheme))
 
+	scheduler := common.MustReturn(gocron.NewScheduler())
 	kubeClient = common.MustReturn(client.New(ctrl.GetConfigOrDie(), client.Options{
 		Scheme: scheme,
 	}))
 
 	common.Must(RefreshWatchers(context.Background(), kubeClient))
-
-	common.MustReturn(scheduler.Every(config.WatcherRefreshPeriod).SingletonMode().WaitForSchedule().Do(func() {
+	common.MustReturn(scheduler.NewJob(gocron.DurationJob(config.WatcherRefreshPeriod), gocron.NewTask(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
 
 		if refreshErr := RefreshWatchers(interruptCtx, kubeClient); refreshErr != nil {
@@ -62,16 +61,16 @@ func main() {
 			logger.Info("Watchers updated, restarting")
 			restart()
 		}
-	}))
+	}), gocron.WithSingletonMode(gocron.LimitModeReschedule)))
 
-	scheduler.StartAsync()
+	scheduler.Start()
 
 	for interruptCtx.Err() == nil {
 		restartCtx, restart = context.WithCancel(interruptCtx)
 		StartManager(restartCtx, watchers)
 	}
 
-	scheduler.Stop()
+	_ = scheduler.Shutdown()
 }
 
 func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
