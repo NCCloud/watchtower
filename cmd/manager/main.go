@@ -48,6 +48,7 @@ func main() {
 	}))
 
 	common.Must(RefreshWatchers(context.Background(), kubeClient))
+	
 	common.MustReturn(scheduler.NewJob(gocron.DurationJob(config.WatcherRefreshPeriod), gocron.NewTask(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
 
