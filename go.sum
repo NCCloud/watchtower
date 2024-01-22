@@ -26,6 +26,8 @@ github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nos
 github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/go-co-op/gocron/v2 v2.2.0 h1:yJBOoKTYJQ7DSGBSM6vL01jJA2rEQi3wYvWg8DTJf40=
 github.com/go-co-op/gocron/v2 v2.2.0/go.mod h1:0MfNAXEchzeSH1vtkZrTAcSMWqyL435kL6CA4b0bjrg=
+github.com/go-co-op/gocron/v2 v2.2.1 h1:SP0Tmzp7JA6t9ErGj2/7k6edPBPwUEH4jWhV4O6gp1k=
+github.com/go-co-op/gocron/v2 v2.2.1/go.mod h1:0MfNAXEchzeSH1vtkZrTAcSMWqyL435kL6CA4b0bjrg=
 github.com/go-logr/logr v1.3.0/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/logr v1.4.1 h1:pKouT5E8xu9zeFC39JXRDukb6JFQPXM5p5I91188VAQ=
 github.com/go-logr/logr v1.4.1/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=

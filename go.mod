@@ -6,7 +6,7 @@ require (
 	dario.cat/mergo v1.0.0
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/caarlos0/env/v10 v10.0.0
-	github.com/go-co-op/gocron/v2 v2.2.0
+	github.com/go-co-op/gocron/v2 v2.2.1
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	k8s.io/api v0.29.1
 	k8s.io/apimachinery v0.29.1
