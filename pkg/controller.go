@@ -8,7 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
 
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
@@ -37,12 +36,16 @@ func NewController(client client.Client, httpClient *http.Client, watcher *v1alp
 	}
 }
 
-func (r *Controller) Reconcile(ctx context.Context, obj *unstructured.Unstructured) (ctrl.Result, error) {
+func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
 		start  = time.Now()
 		logger = log.FromContext(ctx)
+		obj    = r.watcher.Spec.Source.NewObject()
 	)
 
+	if getErr := r.client.Get(ctx, req.NamespacedName, obj); getErr != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(getErr)
+	}
 	logger.Info("Started")
 
 	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
@@ -157,5 +160,5 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
 		}).
 		For(r.watcher.Spec.Source.NewObject()).
-		Complete(reconcile.AsReconciler[*unstructured.Unstructured](r.client, r))
+		Complete(r)
 }

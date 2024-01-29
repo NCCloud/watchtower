@@ -1,14 +1,17 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"fmt"
+	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
 	http2 "github.com/nccloud/watchtower/mocks/net/http"
 	cache2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
 	client2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/client"
 	"github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/manager"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
-	"github.com/nccloud/watchtower/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"io"
@@ -17,30 +20,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	controller2 "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"strings"
 	"testing"
 	"time"
 )
 
 var testVars = struct {
-	scheme    *runtime.Scheme
-	config    *common.Config
-	k8sClient client.Client
-	logger    logr.Logger
-	watcher   *v1alpha1.Watcher
+	kubeConfig *rest.Config
+	scheme     *runtime.Scheme
+	logger     logr.Logger
 }{
 	scheme: runtime.NewScheme(),
-	config: common.NewConfig(),
 	logger: zap.New(),
 }
 
@@ -49,54 +55,30 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(testVars.scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(testVars.scheme))
 
-	//kubeConfig, testEnvStartErr := (&envtest.Environment{
-	//	ControlPlane: envtest.ControlPlane{
-	//		APIServer: &envtest.APIServer{
-	//			StartTimeout: 5 * time.Minute,
-	//			StopTimeout:  5 * time.Minute,
-	//		},
-	//		Etcd: &envtest.Etcd{
-	//			StartTimeout: 5 * time.Minute,
-	//			StopTimeout:  5 * time.Minute,
-	//		},
-	//	},
-	//	ErrorIfCRDPathMissing: true,
-	//	CRDDirectoryPaths: []string{
-	//		filepath.Join("..", "deploy", "crds"), filepath.Join("..", ".envtest", "crds"),
-	//	},
-	//	BinaryAssetsDirectory:    "../.envtest/bins",
-	//	ControlPlaneStartTimeout: 5 * time.Minute,
-	//	ControlPlaneStopTimeout:  5 * time.Minute,
-	//}).Start()
-	//if testEnvStartErr != nil {
-	//	panic(testEnvStartErr)
-	//}
+	kubeConfig, testEnvStartErr := (&envtest.Environment{
+		ControlPlane: envtest.ControlPlane{
+			APIServer: &envtest.APIServer{
+				StartTimeout: 5 * time.Minute,
+				StopTimeout:  5 * time.Minute,
+			},
+			Etcd: &envtest.Etcd{
+				StartTimeout: 5 * time.Minute,
+				StopTimeout:  5 * time.Minute,
+			},
+		},
+		ErrorIfCRDPathMissing: true,
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "deploy", "crds"), filepath.Join("..", ".envtest", "crds"),
+		},
+		BinaryAssetsDirectory:    "../.envtest/bins",
+		ControlPlaneStartTimeout: 5 * time.Minute,
+		ControlPlaneStopTimeout:  5 * time.Minute,
+	}).Start()
+	if testEnvStartErr != nil {
+		panic(testEnvStartErr)
+	}
 
-	//manager, managerErr := ctrl.NewManager(kubeConfig, ctrl.Options{
-	//	Scheme: testVars.scheme,
-	//	Metrics: server.Options{
-	//		BindAddress: ":0",
-	//	},
-	//	Logger: testVars.logger,
-	//})
-	//if managerErr != nil {
-	//	panic(managerErr)
-	//}
-	//
-	//if setupErr := (&Controller{
-	//	client:  manager.GetClient(),
-	//	watcher: testVars.watcher,
-	//}).SetupWithManager(manager); setupErr != nil {
-	//	panic(setupErr)
-	//}
-	//
-	//testVars.k8sClient = manager.GetClient()
-
-	//go func() {
-	//	if managerStartErr := manager.Start(context.Background()); managerStartErr != nil {
-	//		panic(managerStartErr)
-	//	}
-	//}()
+	testVars.kubeConfig = kubeConfig
 }
 
 func TestController_New(t *testing.T) {
@@ -149,34 +131,41 @@ func TestController_Reconcile(t *testing.T) {
 		}).Compile()
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
-		controller       = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
+		secret           = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"type":       "Opaque",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+					"labels": map[string]interface{}{
+						"my-label": "true",
+					},
+					"annotations": map[string]interface{}{
+						"my-annotation": "true",
+					},
+				},
+				"data": map[string]interface{}{
+					"my-key": "my-value",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
-
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret), mock.Anything).Return(nil)
 	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(&http.Response{StatusCode: 200}, nil)
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "v1",
-			"kind":       "Secret",
-			"type":       "Opaque",
-			"metadata": map[string]interface{}{
-				"name":      "my-secret",
-				"namespace": "my-namespace",
-				"labels": map[string]interface{}{
-					"my-label": "true",
-				},
-				"annotations": map[string]interface{}{
-					"my-annotation": "true",
-				},
-			},
-			"data": map[string]interface{}{
-				"my-key": "my-value",
-			},
-		},
-	}
-
-	result, reconcileErr := controller.Reconcile(ctx, secret)
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 
 	// then
 	assert.Nil(t, reconcileErr)
@@ -189,6 +178,85 @@ func TestController_Reconcile(t *testing.T) {
 		bodyMatched := string(body) == "my-value-in-template"
 		return headerMatched && methodMatched && bodyMatched && urlMatched
 	}))
+}
+
+func TestController_ReconcileIntegration(t *testing.T) {
+	// given
+	var request *http.Request
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request = r
+		body, _ = io.ReadAll(r.Body)
+		w.Write([]byte("OK"))
+	}))
+
+	manager, managerErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
+		Scheme: testVars.scheme, Logger: zap.New(),
+	})
+	if managerErr != nil {
+		panic(managerErr)
+	}
+
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Source: v1alpha1.Source{
+				APIVersion:  "v1",
+				Kind:        "Secret",
+				Concurrency: ptr.To(1),
+			},
+			Destination: v1alpha1.Destination{
+				URLTemplate:  fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
+				BodyTemplate: "{{ .data.value }}",
+				Method:       "POST",
+				Headers:      map[string][]string{"Bearer": {gofakeit.UUID()}},
+			},
+		},
+	}).Compile()
+
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-secret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"id":    []byte(gofakeit.UUID()),
+			"value": []byte(gofakeit.UUID()),
+		},
+	}
+
+	if setupErr := (&Controller{
+		client:     manager.GetClient(),
+		watcher:    watcher,
+		httpClient: server.Client(),
+	}).SetupWithManager(manager); setupErr != nil {
+		panic(setupErr)
+	}
+
+	go func() {
+		if managerStartErr := manager.Start(context.Background()); managerStartErr != nil {
+			panic(managerStartErr)
+		}
+	}()
+
+	//when
+	createErr := manager.GetClient().Create(context.Background(), secret)
+
+	//then
+	assert.Nil(t, createErr)
+	assert.Eventually(t, func() bool {
+		if request != nil {
+			methodMatches := request.Method == watcher.Spec.Destination.Method
+			headerMatches := request.Header.Get("Bearer") == watcher.Spec.Destination.Headers["Bearer"][0]
+			urlMatches := fmt.Sprintf("http://%s%s", request.Host, request.URL.Path) == strings.ReplaceAll(watcher.Spec.Destination.URLTemplate,
+				"{{ .data.id | b64dec }}", string(secret.Data["id"]))
+			body, _ = io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBuffer(body)))
+			bodyMatches := string(body) == strings.ReplaceAll(watcher.Spec.Destination.BodyTemplate,
+				"{{ .data.value }}", string(secret.Data["value"]))
+			return methodMatches && headerMatches && urlMatches && bodyMatches
+		}
+
+		return false
+	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func TestController_Reconcile_FilterByObjectName(t *testing.T) {
@@ -206,16 +274,24 @@ func TestController_Reconcile_FilterByObjectName(t *testing.T) {
 				},
 			},
 		}).Compile()
+		secret = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"metadata": map[string]interface{}{"name": "my-secret"},
+			},
+		}
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"name": "my-secret"},
-		},
-	}
-	result, reconcileErr := controller.Reconcile(ctx, secret)
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
@@ -238,16 +314,24 @@ func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
 				},
 			},
 		}).Compile()
+		secret = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"metadata": map[string]interface{}{"namespace": "my-secret"},
+			},
+		}
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"namespace": "my-secret"},
-		},
-	}
-	result, reconcileErr := controller.Reconcile(ctx, secret)
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
@@ -272,14 +356,22 @@ func TestController_Reconcile_FilterByLabels(t *testing.T) {
 				},
 			},
 		}).Compile()
+		secret = &unstructured.Unstructured{
+			Object: map[string]interface{}{},
+		}
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{},
-	}
-	result, reconcileErr := controller.Reconcile(ctx, secret)
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
@@ -304,15 +396,22 @@ func TestController_Reconcile_FilterByAnnotations(t *testing.T) {
 				},
 			},
 		}).Compile()
+		secret = &unstructured.Unstructured{
+			Object: map[string]interface{}{},
+		}
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{},
-	}
-	result, reconcileErr := controller.Reconcile(ctx, secret)
-
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
@@ -337,18 +436,25 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 				},
 			},
 		}).Compile()
+		secret = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"metadata": map[string]interface{}{"namespace": "my-secret"},
+				"data":     map[string]interface{}{"key": "value"},
+			},
+		}
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
 
 	// when
-	secret := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"metadata": map[string]interface{}{"namespace": "my-secret"},
-			"data":     map[string]interface{}{"key": "value"},
-		},
-	}
-	result, reconcileErr := controller.Reconcile(ctx, secret)
-
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
@@ -528,7 +634,7 @@ func TestController_SetupWithManager(t *testing.T) {
 	)
 
 	mockManager.EXPECT().GetControllerOptions().Return(config.Controller{})
-	mockManager.EXPECT().GetScheme().Return(testVars.scheme)
+	mockManager.EXPECT().GetScheme().Return(runtime.NewScheme())
 	mockManager.EXPECT().GetCache().Return(mockCache)
 	mockManager.EXPECT().GetRESTMapper().Return(meta.MultiRESTMapper{})
 	mockManager.EXPECT().GetLogger().Return(zap.New())
