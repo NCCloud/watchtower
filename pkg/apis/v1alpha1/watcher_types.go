@@ -8,8 +8,6 @@ import (
 	"github.com/nccloud/watchtower/pkg/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 //+kubebuilder:object:root=true
@@ -131,7 +129,7 @@ type Destination struct {
 	} `json:"-"`
 }
 
-func (s *Source) NewObject() client.Object {
+func (s *Source) NewObject() *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": s.APIVersion,

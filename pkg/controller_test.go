@@ -2,15 +2,18 @@ package pkg
 
 import (
 	"context"
-	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
 	http2 "github.com/nccloud/watchtower/mocks/net/http"
+	cache2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
 	client2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/manager"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/nccloud/watchtower/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"io"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,9 +24,12 @@ import (
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
+	controller2 "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"strings"
 	"testing"
+	"time"
 )
 
 var testVars = struct {
@@ -192,10 +198,6 @@ func TestController_Reconcile_FilterByObjectName(t *testing.T) {
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		watcher          = (&v1alpha1.Watcher{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.AppName(), " ", "")),
-				Namespace: "default",
-			},
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
@@ -228,10 +230,6 @@ func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		watcher          = (&v1alpha1.Watcher{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.AppName(), " ", "")),
-				Namespace: "default",
-			},
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
@@ -264,10 +262,6 @@ func TestController_Reconcile_FilterByLabels(t *testing.T) {
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		watcher          = (&v1alpha1.Watcher{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.AppName(), " ", "")),
-				Namespace: "default",
-			},
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
@@ -300,10 +294,6 @@ func TestController_Reconcile_FilterByAnnotations(t *testing.T) {
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		watcher          = (&v1alpha1.Watcher{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.AppName(), " ", "")),
-				Namespace: "default",
-			},
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
@@ -336,10 +326,6 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		watcher          = (&v1alpha1.Watcher{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.AppName(), " ", "")),
-				Namespace: "default",
-			},
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
@@ -367,4 +353,193 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
 	assert.False(t, result.Requeue)
+}
+
+func TestController_FilterEvent(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		oldSecret  = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Generation:        int64(1),
+			},
+		}
+		newSecret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+				Generation:        int64(2),
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Create: v1alpha1.CreateEventFilter{
+							CreationTimeout: ptr.To("1h"),
+						},
+						Update: v1alpha1.UpdateEventFilter{
+							GenerationChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	filtered := controller.Create(event.CreateEvent{
+		Object: newSecret,
+	}) && controller.Update(event.UpdateEvent{
+		ObjectOld: oldSecret,
+		ObjectNew: newSecret,
+	}) == false
+
+	// then
+	assert.False(t, filtered)
+}
+
+func TestController_FilterEventCreateCreationTimeout(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		secret     = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)},
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Create: v1alpha1.CreateEventFilter{
+							CreationTimeout: ptr.To("10s"),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	filtered := controller.Create(event.CreateEvent{
+		Object: secret,
+	}) == false
+
+	// then
+	assert.True(t, filtered)
+}
+
+func TestController_FilterEventUpdateGenerationChangedTrue(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		oldSecret  = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(2),
+			},
+		}
+		newSecret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(2),
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							GenerationChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	filtered := controller.Update(event.UpdateEvent{
+		ObjectOld: oldSecret,
+		ObjectNew: newSecret,
+	}) == false
+
+	// then
+	assert.True(t, filtered)
+}
+
+func TestController_FilterEventUpdateGenerationChangedFalse(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		oldSecret  = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(1),
+			},
+		}
+		newSecret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(1),
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							GenerationChanged: ptr.To(false),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	filtered := controller.Update(event.UpdateEvent{
+		ObjectOld: oldSecret,
+		ObjectNew: newSecret,
+	}) == false
+
+	// then
+	assert.False(t, filtered)
+}
+
+func TestController_SetupWithManager(t *testing.T) {
+	// given
+	var (
+		mockClient       = new(client2.MockClient)
+		mockManager      = new(manager.MockManager)
+		mockCache        = new(cache2.MockCache)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		watcher          = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Source: v1alpha1.Source{
+					APIVersion:  "v1",
+					Kind:        "Secret",
+					Concurrency: ptr.To(2),
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
+	)
+
+	mockManager.EXPECT().GetControllerOptions().Return(config.Controller{})
+	mockManager.EXPECT().GetScheme().Return(testVars.scheme)
+	mockManager.EXPECT().GetCache().Return(mockCache)
+	mockManager.EXPECT().GetRESTMapper().Return(meta.MultiRESTMapper{})
+	mockManager.EXPECT().GetLogger().Return(zap.New())
+	mockManager.EXPECT().GetFieldIndexer().Return(mockCache)
+	mockManager.EXPECT().Add(mock.MatchedBy(func(ct controller2.Controller) bool {
+		return ct != nil
+	})).Return(nil)
+
+	// when
+	setupErr := controller.SetupWithManager(mockManager)
+
+	// then
+	assert.Nil(t, setupErr)
 }
