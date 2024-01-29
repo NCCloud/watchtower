@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"dario.cat/mergo"
 
@@ -131,7 +132,7 @@ func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) {
 	}))
 
 	for _, watcher := range watchers {
-		common.Must(pkg.NewController(manager.GetClient(), watcher.Compile()).SetupWithManager(manager))
+		common.Must(pkg.NewController(manager.GetClient(), &http.Client{}, watcher.Compile()).SetupWithManager(manager))
 	}
 
 	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))

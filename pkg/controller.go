@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
 
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
@@ -22,27 +23,24 @@ import (
 var ErrUnexpectedStatusCode = errors.New("unexpected status code")
 
 type Controller struct {
-	client  client.Client
-	watcher *v1alpha1.Watcher
+	client     client.Client
+	watcher    *v1alpha1.Watcher
+	httpClient *http.Client
 }
 
-func NewController(client client.Client, watcher *v1alpha1.Watcher) *Controller {
+func NewController(client client.Client, httpClient *http.Client, watcher *v1alpha1.Watcher) *Controller {
 	return &Controller{
-		client:  client,
-		watcher: watcher,
+		client:     client,
+		httpClient: httpClient,
+		watcher:    watcher,
 	}
 }
 
-func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Controller) Reconcile(ctx context.Context, object client.Object) (ctrl.Result, error) {
 	var (
 		start  = time.Now()
 		logger = log.FromContext(ctx)
-		object = r.watcher.Spec.Source.NewObject()
 	)
-
-	if getErr := r.client.Get(ctx, req.NamespacedName, object); getErr != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(getErr)
-	}
 
 	logger.Info("Started")
 
@@ -114,7 +112,7 @@ func (r *Controller) Send(ctx context.Context, obj client.Object) error {
 
 	request.Header = r.watcher.Spec.Destination.Headers
 
-	doRequest, doRequestErr := http.DefaultClient.Do(request)
+	doRequest, doRequestErr := r.httpClient.Do(request)
 	if doRequestErr != nil {
 		return doRequestErr
 	}
@@ -154,5 +152,5 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
 		}).
 		For(r.watcher.Spec.Source.NewObject()).
-		Complete(r)
+		Complete(reconcile.AsReconciler[client.Object](r.client, r))
 }
