@@ -8,13 +8,16 @@ import (
 	"net/http"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"sigs.k8s.io/controller-runtime/pkg/event"
+
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/nccloud/watchtower/pkg/common"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
@@ -22,14 +25,16 @@ import (
 var ErrUnexpectedStatusCode = errors.New("unexpected status code")
 
 type Controller struct {
-	client  client.Client
-	watcher *v1alpha1.Watcher
+	client     client.Client
+	watcher    *v1alpha1.Watcher
+	httpClient *http.Client
 }
 
-func NewController(client client.Client, watcher *v1alpha1.Watcher) *Controller {
+func NewController(client client.Client, httpClient *http.Client, watcher *v1alpha1.Watcher) *Controller {
 	return &Controller{
-		client:  client,
-		watcher: watcher,
+		client:     client,
+		httpClient: httpClient,
+		watcher:    watcher,
 	}
 }
 
@@ -37,20 +42,20 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var (
 		start  = time.Now()
 		logger = log.FromContext(ctx)
-		object = r.watcher.Spec.Source.NewObject()
+		obj    = r.watcher.Spec.Source.NewObject()
 	)
 
-	if getErr := r.client.Get(ctx, req.NamespacedName, object); getErr != nil {
+	if getErr := r.client.Get(ctx, req.NamespacedName, obj); getErr != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
 	logger.Info("Started")
 
-	if filtered, filterErr := r.Filter(object); filterErr != nil || filtered {
+	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
 
-	if sendErr := r.Send(ctx, object); sendErr != nil {
+	if sendErr := r.Send(ctx, obj); sendErr != nil {
 		return ctrl.Result{}, sendErr
 	}
 
@@ -59,7 +64,63 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Controller) Filter(obj client.Object) (bool, error) {
+func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) error {
+	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
+	if urlErr != nil {
+		return urlErr
+	}
+
+	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.BodyTemplate, obj)
+	if bodyErr != nil {
+		return bodyErr
+	}
+
+	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Spec.Destination.Method,
+		string(url), bytes.NewReader(body))
+	if requestErr != nil {
+		return requestErr
+	}
+
+	request.Header = r.watcher.Spec.Destination.Headers
+
+	doRequest, doRequestErr := r.httpClient.Do(request)
+	if doRequestErr != nil {
+		return doRequestErr
+	}
+	defer doRequest.Body.Close()
+
+	if doRequest.StatusCode < 200 || doRequest.StatusCode >= 300 {
+		return fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, doRequest.StatusCode)
+	}
+
+	return nil
+}
+
+func (r *Controller) FilterEvent() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(event event.CreateEvent) bool {
+			if r.watcher.Spec.Filter.Event.Create.CreationTimeout != nil {
+				return event.Object.GetCreationTimestamp().
+					Add(r.watcher.Spec.Filter.Event.Create.Compiled.CreationTimeout).After(time.Now())
+			}
+
+			return true
+		},
+		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
+			if r.watcher.Spec.Filter.Event.Update.GenerationChanged != nil {
+				if *r.watcher.Spec.Filter.Event.Update.GenerationChanged {
+					return updateEvent.ObjectOld.GetGeneration() != updateEvent.ObjectNew.GetGeneration()
+				}
+
+				return updateEvent.ObjectOld.GetGeneration() == updateEvent.ObjectNew.GetGeneration()
+			}
+
+			return true
+		},
+	}
+}
+
+func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) {
 	if r.watcher.Spec.Filter.Object.Name != nil &&
 		!r.watcher.Spec.Filter.Object.Compiled.Name.MatchString(obj.GetName()) {
 		return true, nil
@@ -95,61 +156,9 @@ func (r *Controller) Filter(obj client.Object) (bool, error) {
 	return false, nil
 }
 
-func (r *Controller) Send(ctx context.Context, obj client.Object) error {
-	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
-	if urlErr != nil {
-		return urlErr
-	}
-
-	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.BodyTemplate, obj)
-	if bodyErr != nil {
-		return bodyErr
-	}
-
-	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Spec.Destination.Method,
-		string(url), bytes.NewReader(body))
-	if requestErr != nil {
-		return requestErr
-	}
-
-	request.Header = r.watcher.Spec.Destination.Headers
-
-	doRequest, doRequestErr := http.DefaultClient.Do(request)
-	if doRequestErr != nil {
-		return doRequestErr
-	}
-	defer doRequest.Body.Close()
-
-	if doRequest.StatusCode < 200 || doRequest.StatusCode >= 300 {
-		return fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, doRequest.StatusCode)
-	}
-
-	return nil
-}
-
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		WithEventFilter(predicate.Funcs{
-			CreateFunc: func(event event.CreateEvent) bool {
-				if r.watcher.Spec.Filter.Event.Create.CreationTimeout != nil {
-					return event.Object.GetCreationTimestamp().
-						Add(r.watcher.Spec.Filter.Event.Create.Compiled.CreationTimeout).After(time.Now())
-				}
-
-				return true
-			},
-			UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-				if r.watcher.Spec.Filter.Event.Update.GenerationChanged != nil {
-					if *r.watcher.Spec.Filter.Event.Update.GenerationChanged {
-						return updateEvent.ObjectOld.GetGeneration() != updateEvent.ObjectNew.GetGeneration()
-					}
-
-					return updateEvent.ObjectOld.GetGeneration() == updateEvent.ObjectNew.GetGeneration()
-				}
-
-				return true
-			},
-		}).
+		WithEventFilter(r.FilterEvent()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
 		}).
