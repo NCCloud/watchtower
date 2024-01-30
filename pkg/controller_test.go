@@ -207,6 +207,22 @@ func TestController_ReconcileIntegration(t *testing.T) {
 				Kind:        "Secret",
 				Concurrency: ptr.To(1),
 			},
+			Filter: v1alpha1.Filter{
+				Object: v1alpha1.ObjectFilter{
+					Name:      ptr.To(".*my.*"),
+					Namespace: ptr.To(".*efaul.*"),
+					Labels: ptr.To(map[string]string{
+						"my-label": "true",
+					}),
+					Annotations: ptr.To(map[string]string{
+						"my-annotation": "true",
+					}),
+					Custom: &v1alpha1.ObjectFilterCustom{
+						Template: "{{ index .data \"my-key\" | b64dec }}",
+						Result:   "my-value",
+					},
+				},
+			},
 			Destination: v1alpha1.Destination{
 				URLTemplate:  fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
 				BodyTemplate: "{{ .data.value }}",
@@ -220,10 +236,17 @@ func TestController_ReconcileIntegration(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-secret",
 			Namespace: "default",
+			Labels: map[string]string{
+				"my-label": "true",
+			},
+			Annotations: map[string]string{
+				"my-annotation": "true",
+			},
 		},
 		Data: map[string][]byte{
-			"id":    []byte(gofakeit.UUID()),
-			"value": []byte(gofakeit.UUID()),
+			"my-key": []byte("my-value"),
+			"id":     []byte(gofakeit.UUID()),
+			"value":  []byte(gofakeit.UUID()),
 		},
 	}
 
