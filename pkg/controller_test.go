@@ -185,6 +185,7 @@ func TestController_Reconcile(t *testing.T) {
 
 func TestController_ReconcileIntegration(t *testing.T) {
 	// given
+	var ctx, cancel = context.WithCancel(context.Background())
 	var request *http.Request
 	var body []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -259,13 +260,13 @@ func TestController_ReconcileIntegration(t *testing.T) {
 	}
 
 	go func() {
-		if managerStartErr := manager.Start(context.Background()); managerStartErr != nil {
+		if managerStartErr := manager.Start(ctx); managerStartErr != nil {
 			panic(managerStartErr)
 		}
 	}()
 
 	// when
-	createErr := manager.GetClient().Create(context.Background(), secret)
+	createErr := manager.GetClient().Create(ctx, secret)
 
 	// then
 	assert.Nil(t, createErr)
@@ -283,6 +284,72 @@ func TestController_ReconcileIntegration(t *testing.T) {
 
 		return false
 	}, 10*time.Second, 100*time.Millisecond)
+
+	cancel()
+}
+
+func TestController_ReconcileMultipleIntegration(t *testing.T) {
+	// given
+	var ctx, cancel = context.WithCancel(context.Background())
+	var testCount = gofakeit.IntRange(5, 30)
+	var callCount = 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount = callCount + 1
+		w.Write([]byte("OK"))
+	}))
+
+	manager, managerErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
+		Scheme: testVars.scheme, Logger: zap.New(),
+	})
+	if managerErr != nil {
+		panic(managerErr)
+	}
+
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Source: v1alpha1.Source{
+				APIVersion:  "v1",
+				Kind:        "Secret",
+				Concurrency: ptr.To(1),
+			},
+			Destination: v1alpha1.Destination{
+				URLTemplate:  fmt.Sprintf("http://%s/test", server.Listener.Addr().String()),
+				BodyTemplate: "test",
+				Method:       "POST",
+			},
+		},
+	}).Compile()
+
+	if setupErr := (&Controller{
+		client:     manager.GetClient(),
+		watcher:    watcher,
+		httpClient: server.Client(),
+	}).SetupWithManager(manager); setupErr != nil {
+		panic(setupErr)
+	}
+
+	go func() {
+		if managerStartErr := manager.Start(ctx); managerStartErr != nil {
+			panic(managerStartErr)
+		}
+	}()
+
+	// when
+	for i := 0; i < testCount; i++ {
+		assert.Nil(t, manager.GetClient().Create(ctx, &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.Name(), " ", "")),
+				Namespace: "default",
+			},
+		}))
+	}
+
+	// then
+	assert.Eventually(t, func() bool {
+		return callCount >= testCount
+	}, 1000*time.Second, 100*time.Millisecond)
+
+	cancel()
 }
 
 func TestController_Reconcile_FilterByObjectName(t *testing.T) {
