@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"net/http"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"time"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/nccloud/watchtower/pkg/common"
@@ -46,6 +48,7 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if getErr := r.client.Get(ctx, req.NamespacedName, obj); getErr != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
+
 	logger.Info("Started")
 
 	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {

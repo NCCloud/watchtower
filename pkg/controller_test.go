@@ -5,6 +5,15 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
 	http2 "github.com/nccloud/watchtower/mocks/net/http"
@@ -14,7 +23,7 @@ import (
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"io"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,10 +34,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"reflect"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
@@ -36,9 +42,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"strings"
-	"testing"
-	"time"
 )
 
 var testVars = struct {
@@ -238,10 +241,10 @@ func TestController_ReconcileIntegration(t *testing.T) {
 		}
 	}()
 
-	//when
+	// when
 	createErr := manager.GetClient().Create(context.Background(), secret)
 
-	//then
+	// then
 	assert.Nil(t, createErr)
 	assert.Eventually(t, func() bool {
 		if request != nil {
