@@ -3,6 +3,13 @@
     <img alt="logo" width="700" src="https://abload.de/img/watchtower32hej7.png">
 </picture>
 
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/nccloud/watchtower)
+![GitHub Release](https://img.shields.io/github/v/release/nccloud/watchtower)
+[![Go Reference](https://pkg.go.dev/badge/github.com/NCCloud/watchtower.svg)](https://pkg.go.dev/github.com/NCCloud/watchtower)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/nccloud/watchtower/test.yaml?label=tests)
+![GitHub issues](https://img.shields.io/github/issues/nccloud/watchtower)
+![GitHub License](https://img.shields.io/github/license/nccloud/watchtower)
+
 ## 📖 General Information
 
 Watchtower is CRD-based Kubernetes operator that monitors changes to resources and exports them to one or more endpoints,

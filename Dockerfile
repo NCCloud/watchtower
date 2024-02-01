@@ -1,7 +1,5 @@
 FROM golang:1.21 as builder
 
-ARG GITHUB_TOKEN
-
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
