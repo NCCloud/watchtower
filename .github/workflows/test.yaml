@@ -34,8 +34,7 @@ jobs:
       - uses: jandelgado/gcov2lcov-action@v1
         with:
           outfile: lcov.info
-      - name: Report code coverage
-        uses: zgosalvez/github-actions-report-lcov@v3
+      - uses: zgosalvez/github-actions-report-lcov@v3
         with:
           coverage-files: lcov.info
           minimum-coverage: 80
