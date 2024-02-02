@@ -32,7 +32,9 @@ jobs:
           ./devops.sh prepare_envtest
       - run: "go test -v -coverprofile=coverage.out -covermode=count ./..."
       - uses: jandelgado/gcov2lcov-action@v1
+        with:
+          outfile: lcov.info
       - uses: kcjpop/coverage-comments@v2.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          coverage-file: 'coverage.lcov'
+          coverage-file: 'lcov.info'
