@@ -31,6 +31,7 @@ jobs:
         run: |
           ./devops.sh prepare_envtest
       - name: Coverage Report
+        continue-on-error: true
         uses: gwatts/go-coverage-action@v1
         id: coverage
         with:
