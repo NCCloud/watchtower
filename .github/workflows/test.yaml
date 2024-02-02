@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - main
-permissions:
-  pull-requests: write
-  contents: write
+permissions: write-all
 
 env:
   GO_VERSION: "1.21"
