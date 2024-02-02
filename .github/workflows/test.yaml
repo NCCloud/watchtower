@@ -35,4 +35,4 @@ jobs:
       - uses: kcjpop/coverage-comments@v2.2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          coverage-file: './coverage/clover.xml'
+          coverage-file: 'coverage.lcov'
