@@ -34,6 +34,7 @@ jobs:
       - uses: jandelgado/gcov2lcov-action@v1
         with:
           outfile: lcov.info
+      - uses: hrishikesh-kadam/setup-lcov@v1
       - uses: zgosalvez/github-actions-report-lcov@v3
         with:
           coverage-files: lcov.info
