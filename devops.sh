@@ -53,7 +53,7 @@ prepare_envtest() {
 }
 
 test() {
-  go test -v -coverpkg=./... ./...
+  go test -coverprofile=coverage.out -covermode=count -v -coverpkg=./... ./...
 }
 
 prerequisites
