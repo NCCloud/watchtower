@@ -30,15 +30,5 @@ jobs:
       - name: Test Preparation
         run: |
           ./devops.sh prepare_envtest
-      - name: Coverage Report
-        continue-on-error: true
-        uses: gwatts/go-coverage-action@v1
-        id: coverage
-        with:
-          coverage-threshold: 80
-          cover-pkg: ./...
-          ignore-pattern: |
-            .*cmd.*
-            .*mocks.*
-            .*apis.*
-            .*generated.*
+      - run: "go test -coverprofile=coverage.out -covermode=count ./..."
+      - uses: seriousben/go-patch-cover-action@v1
