@@ -31,7 +31,7 @@ jobs:
         run: |
           ./devops.sh prepare_envtest
       - name: Coverage Report
-        uses: Jcabza008/go-coverage-action@v1.3.4
+        uses: gwatts/go-coverage-action@v1
         id: coverage
         with:
           coverage-threshold: 80
