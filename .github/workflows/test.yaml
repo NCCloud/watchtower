@@ -30,7 +30,7 @@ jobs:
       - name: Test Preparation
         run: |
           ./devops.sh prepare_envtest
-      - run: "go test -v -covermode=count -coverprofile=coverage.out"
+      - run: "go test -v -coverprofile=coverage.out -covermode=count ./..."
       - uses: jandelgado/gcov2lcov-action@v1
       - uses: kcjpop/coverage-comments@v2.2
         with:
