@@ -136,7 +136,36 @@ _Appears in:_
 | --- | --- |
 | `apiVersion` _string_ | APIVersion is api version of the object like apps/v1, v1 etc. |
 | `kind` _string_ | Kind is the kind of the object like Deployment, Secret, MyCustomResource etc. |
-| `concurrency` _integer_ | Concurrency is how many concurrent workers will be working on processing this source. |
+| `concurrency` _integer_ | Concurrency sets how many objects can be processed in parallel. |
+| `options` _[SourceOptions](#sourceoptions)_ | Options allows you to set source specific options |
+
+
+#### SourceOptions
+
+
+
+
+
+_Appears in:_
+- [Source](#source)
+
+| Field | Description |
+| --- | --- |
+| `onSuccess` _[SourceOptionsOnSuccess](#sourceoptionsonsuccess)_ | OnSuccess will be called when the source is successfully processed. |
+
+
+#### SourceOptionsOnSuccess
+
+
+
+
+
+_Appears in:_
+- [SourceOptions](#sourceoptions)
+
+| Field | Description |
+| --- | --- |
+| `delete` _boolean_ | DeleteObject will delete the object after it successfully processed. |
 
 
 #### UpdateEventFilter
