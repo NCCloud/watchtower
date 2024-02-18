@@ -185,7 +185,7 @@ func TestController_Reconcile(t *testing.T) {
 
 func TestController_ReconcileIntegration(t *testing.T) {
 	// given
-	var ctx, cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	var request *http.Request
 	var body []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -290,9 +290,9 @@ func TestController_ReconcileIntegration(t *testing.T) {
 
 func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	// given
-	var ctx, cancel = context.WithCancel(context.Background())
-	var testCount = gofakeit.IntRange(5, 30)
-	var callCount = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	testCount := gofakeit.IntRange(5, 30)
+	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount = callCount + 1
 		w.Write([]byte("OK"))
@@ -562,12 +562,14 @@ func TestController_FilterEvent(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Time{Time: time.Now()},
 				Generation:        int64(1),
+				ResourceVersion:   "1",
 			},
 		}
 		newSecret = &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Time{Time: time.Now()},
 				Generation:        int64(2),
+				ResourceVersion:   "2",
 			},
 		}
 		watcher = (&v1alpha1.Watcher{
@@ -578,7 +580,8 @@ func TestController_FilterEvent(t *testing.T) {
 							CreationTimeout: ptr.To("1h"),
 						},
 						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged: ptr.To(true),
+							GenerationChanged:      ptr.To(true),
+							ResourceVersionChanged: ptr.To(true),
 						},
 					},
 				},
@@ -597,6 +600,133 @@ func TestController_FilterEvent(t *testing.T) {
 
 	// then
 	assert.False(t, filtered)
+}
+
+func TestController_FilterEvent_WhenCreationTimeouts(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		newSecret  = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+			},
+		}
+		oldSecret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now().Add(-8 * time.Hour)},
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Create: v1alpha1.CreateEventFilter{
+							CreationTimeout: ptr.To("1h"),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	oldSecretFiltered := controller.Create(event.CreateEvent{
+		Object: oldSecret,
+	}) == false
+	newSecretFiltered := controller.Create(event.CreateEvent{
+		Object: newSecret,
+	}) == false
+
+	// then
+	assert.True(t, oldSecretFiltered)
+	assert.False(t, newSecretFiltered)
+}
+
+func TestController_FilterEvent_WhenGenerationChanged(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		gen1Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(1),
+			},
+		}
+		gen2Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(2),
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							GenerationChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	differentGenFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: gen1Secret,
+		ObjectNew: gen2Secret,
+	}) == false
+	sameGenFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: gen2Secret,
+		ObjectNew: gen2Secret,
+	}) == false
+
+	// then
+	assert.False(t, differentGenFiltered)
+	assert.True(t, sameGenFiltered)
+}
+
+func TestController_FilterEvent_WhenResourceVersionChanged(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		res1Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				ResourceVersion: "1",
+			},
+		}
+		res2Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				ResourceVersion: "2",
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							ResourceVersionChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	differentResFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: res1Secret,
+		ObjectNew: res2Secret,
+	}) == false
+	sameResFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: res2Secret,
+		ObjectNew: res2Secret,
+	}) == false
+
+	// then
+	assert.False(t, differentResFiltered)
+	assert.True(t, sameResFiltered)
 }
 
 func TestController_FilterEventCreateCreationTimeout(t *testing.T) {

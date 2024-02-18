@@ -115,6 +115,14 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 				return updateEvent.ObjectOld.GetGeneration() == updateEvent.ObjectNew.GetGeneration()
 			}
 
+			if r.watcher.Spec.Filter.Event.Update.ResourceVersionChanged != nil {
+				if *r.watcher.Spec.Filter.Event.Update.ResourceVersionChanged {
+					return updateEvent.ObjectOld.GetResourceVersion() != updateEvent.ObjectNew.GetResourceVersion()
+				}
+
+				return updateEvent.ObjectOld.GetResourceVersion() == updateEvent.ObjectNew.GetResourceVersion()
+			}
+
 			return true
 		},
 	}

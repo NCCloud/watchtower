@@ -83,8 +83,14 @@ type CreateEventFilter struct {
 }
 
 type UpdateEventFilter struct {
-	// GenerationChanged sets if generation should be different or same according to value. By default, It's not in use.
+	// GenerationChanged sets if generation should be different or same according to value.
+	// It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.
+	// By default, It's not set.
 	GenerationChanged *bool `json:"generationChanged,omitempty" yaml:"generationChanged"`
+	// ResourceVersionChanged sets if resource version should be different or same according to value.
+	// It's useful when you don't want to re-send objects if their resource version is not changed,
+	// like it will happen on full re-synchronization. By default, It's not set.
+	ResourceVersionChanged *bool `json:"resourceVersionChanged,omitempty" yaml:"resourceVersion"`
 }
 
 type ObjectFilter struct {
