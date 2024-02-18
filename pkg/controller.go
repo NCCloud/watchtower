@@ -49,11 +49,11 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
-	logger.Info("Started")
-
 	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
+
+	logger.Info("Started")
 
 	if sendErr := r.Send(ctx, obj); sendErr != nil {
 		return ctrl.Result{}, sendErr
