@@ -27,6 +27,21 @@ _Appears in:_
 | `creationTimeout` _string_ | CreationTimeout sets what will be the maximum duration can past for the objects in create queue. It also helps to minimize number of object that will be re-sent when application restarts. |
 
 
+#### CustomObjectFilter
+
+
+
+
+
+_Appears in:_
+- [ObjectFilter](#objectfilter)
+
+| Field | Description |
+| --- | --- |
+| `template` _string_ | Template is the template that will be used to compare result with Result and filter accordingly. |
+| `result` _string_ | Result is the result that will be used to compare with the result of the Template. |
+
+
 #### Destination
 
 
@@ -89,22 +104,21 @@ _Appears in:_
 | `namespace` _string_ | Namespace is the regular expression to filter object Its namespace. |
 | `labels` _map[string]string_ | Labels are the labels to filter object by labels. |
 | `annotations` _map[string]string_ | Annotations are the labels to filter object by annotation. |
-| `custom` _[ObjectFilterCustom](#objectfiltercustom)_ | Custom is the most advanced way of filtering object by their contents and multiple fields by templating. |
+| `custom` _[CustomObjectFilter](#customobjectfilter)_ | Custom is the most advanced way of filtering object by their contents and multiple fields by templating. |
 
 
-#### ObjectFilterCustom
+#### OnSuccessSourceOptions
 
 
 
 
 
 _Appears in:_
-- [ObjectFilter](#objectfilter)
+- [SourceOptions](#sourceoptions)
 
 | Field | Description |
 | --- | --- |
-| `template` _string_ | Template is the template that will be used to compare result with Result and filter accordingly. |
-| `result` _string_ | Result is the result that will be used to compare with the result of the Template. |
+| `deleteObject` _boolean_ | DeleteObject will delete the object after it successfully processed. |
 
 
 #### SecretKeySelector
@@ -137,6 +151,21 @@ _Appears in:_
 | `apiVersion` _string_ | APIVersion is api version of the object like apps/v1, v1 etc. |
 | `kind` _string_ | Kind is the kind of the object like Deployment, Secret, MyCustomResource etc. |
 | `concurrency` _integer_ | Concurrency is how many concurrent workers will be working on processing this source. |
+| `options` _[SourceOptions](#sourceoptions)_ | Options allows you to set source specific options |
+
+
+#### SourceOptions
+
+
+
+
+
+_Appears in:_
+- [Source](#source)
+
+| Field | Description |
+| --- | --- |
+| `onSuccess` _[OnSuccessSourceOptions](#onsuccesssourceoptions)_ | OnSuccess options will be used when the source is successfully processed. |
 
 
 #### UpdateEventFilter

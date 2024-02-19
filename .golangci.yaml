@@ -15,5 +15,5 @@ linters-settings:
   cyclop:
     max-complexity: 12
 run:
-  go: '1.21'
+  go: '1.22'
   tests: false

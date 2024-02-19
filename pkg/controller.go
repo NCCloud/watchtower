@@ -49,14 +49,21 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(getErr)
 	}
 
-	logger.Info("Started")
-
 	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
 		return ctrl.Result{}, filterErr
 	}
 
+	logger.Info("Started")
+
 	if sendErr := r.Send(ctx, obj); sendErr != nil {
 		return ctrl.Result{}, sendErr
+	}
+
+	if r.watcher.Spec.Source.Options.OnSuccess.DeleteObject {
+		deleteErr := r.client.Delete(ctx, obj, client.PropagationPolicy("Background"))
+		if client.IgnoreNotFound(deleteErr) != nil {
+			return ctrl.Result{}, deleteErr
+		}
 	}
 
 	logger.Info("Finished", "duration", time.Since(start).String())

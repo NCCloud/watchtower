@@ -352,6 +352,76 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	cancel()
 }
 
+func TestController_Reconcile_DeleteObjectOnSuccessOption(t *testing.T) {
+	// given
+	var (
+		ctx     = context.Background()
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Source: v1alpha1.Source{
+					Options: v1alpha1.SourceOptions{
+						OnSuccess: v1alpha1.OnSuccessSourceOptions{
+							DeleteObject: true,
+						},
+					},
+				},
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com/{{ index .data \"my-key\" }}-in-url",
+					BodyTemplate: "{{ index .data \"my-key\" }}-in-template",
+					Method:       "POST",
+					Headers: map[string][]string{
+						"Content-Type": {"application/custom"},
+					},
+				},
+			},
+		}).Compile()
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		secret           = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"type":       "Opaque",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+				},
+				"data": map[string]interface{}{
+					"my-key": "my-value",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
+	)
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
+		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
+	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret), mock.Anything).Return(nil)
+	mockClient.EXPECT().Delete(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(&http.Response{StatusCode: 200}, nil)
+
+	// when
+	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(secret),
+	})
+
+	// then
+	assert.Nil(t, reconcileErr)
+	assert.False(t, result.Requeue)
+	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
+		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
+		headerMatched := reflect.DeepEqual(r.Header.Get("Content-Type"), "application/custom") && len(r.Header) == 1
+		methodMatched := reflect.DeepEqual(r.Method, "POST")
+		body, _ := io.ReadAll(r.Body)
+		bodyMatched := string(body) == "my-value-in-template"
+		return headerMatched && methodMatched && bodyMatched && urlMatched
+	}))
+	mockClient.AssertCalled(t, "Delete", mock.Anything, secret, client.PropagationPolicy("Background"))
+}
+
 func TestController_Reconcile_FilterByObjectName(t *testing.T) {
 	// given
 	var (
@@ -602,7 +672,7 @@ func TestController_FilterEvent(t *testing.T) {
 	assert.False(t, filtered)
 }
 
-func TestController_FilterEvent_WhenCreationTimeouts(t *testing.T) {
+func TestController_FilterEvent_CreationTimeouts(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -643,7 +713,7 @@ func TestController_FilterEvent_WhenCreationTimeouts(t *testing.T) {
 	assert.False(t, newSecretFiltered)
 }
 
-func TestController_FilterEvent_WhenGenerationChanged(t *testing.T) {
+func TestController_FilterEvent_GenerationChanged(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -686,7 +756,7 @@ func TestController_FilterEvent_WhenGenerationChanged(t *testing.T) {
 	assert.True(t, sameGenFiltered)
 }
 
-func TestController_FilterEvent_WhenResourceVersionChanged(t *testing.T) {
+func TestController_FilterEvent_ResourceVersionChanged(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -729,7 +799,7 @@ func TestController_FilterEvent_WhenResourceVersionChanged(t *testing.T) {
 	assert.True(t, sameResFiltered)
 }
 
-func TestController_FilterEventCreateCreationTimeout(t *testing.T) {
+func TestController_FilterEvent_CreationTimeout(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -761,7 +831,7 @@ func TestController_FilterEventCreateCreationTimeout(t *testing.T) {
 	assert.True(t, filtered)
 }
 
-func TestController_FilterEventUpdateGenerationChangedTrue(t *testing.T) {
+func TestController_FilterEvent_UpdateGenerationChangedTrue(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -799,7 +869,7 @@ func TestController_FilterEventUpdateGenerationChangedTrue(t *testing.T) {
 	assert.True(t, filtered)
 }
 
-func TestController_FilterEventUpdateGenerationChangedFalse(t *testing.T) {
+func TestController_FilterEvent_UpdateGenerationChangedFalse(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)

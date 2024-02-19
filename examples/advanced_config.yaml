@@ -7,6 +7,9 @@ spec:
     apiVersion: "apps/v1"
     kind: "Deployment"
     concurrency: 1
+    options:
+      onSuccess:
+        deleteObject: true
   filter:
     event:
       create:
