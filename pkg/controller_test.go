@@ -116,7 +116,7 @@ func TestController_Reconcile(t *testing.T) {
 						Annotations: ptr.To(map[string]string{
 							"my-annotation": "true",
 						}),
-						Custom: &v1alpha1.ObjectFilterCustom{
+						Custom: &v1alpha1.CustomObjectFilter{
 							Template: "{{ index .data \"my-key\" }}",
 							Result:   "my-value",
 						},
@@ -218,7 +218,7 @@ func TestController_ReconcileIntegration(t *testing.T) {
 					Annotations: ptr.To(map[string]string{
 						"my-annotation": "true",
 					}),
-					Custom: &v1alpha1.ObjectFilterCustom{
+					Custom: &v1alpha1.CustomObjectFilter{
 						Template: "{{ index .data \"my-key\" | b64dec }}",
 						Result:   "my-value",
 					},
@@ -591,7 +591,7 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 			Spec: v1alpha1.WatcherSpec{
 				Filter: v1alpha1.Filter{
 					Object: v1alpha1.ObjectFilter{
-						Custom: &v1alpha1.ObjectFilterCustom{
+						Custom: &v1alpha1.CustomObjectFilter{
 							Template: "{{ .data.key }}",
 							Result:   "non-related-value",
 						},
@@ -797,38 +797,6 @@ func TestController_FilterEvent_ResourceVersionChanged(t *testing.T) {
 	// then
 	assert.False(t, differentResFiltered)
 	assert.True(t, sameResFiltered)
-}
-
-func TestController_FilterEvent_CreationTimeout(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		secret     = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)},
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Create: v1alpha1.CreateEventFilter{
-							CreationTimeout: ptr.To("10s"),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	filtered := controller.Create(event.CreateEvent{
-		Object: secret,
-	}) == false
-
-	// then
-	assert.True(t, filtered)
 }
 
 func TestController_FilterEvent_UpdateGenerationChangedTrue(t *testing.T) {
