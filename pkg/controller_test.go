@@ -352,7 +352,7 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	cancel()
 }
 
-func TestController_Reconcile_DeleteObjectOnSuccessOption(t *testing.T) {
+func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 	// given
 	var (
 		ctx     = context.Background()
@@ -422,7 +422,7 @@ func TestController_Reconcile_DeleteObjectOnSuccessOption(t *testing.T) {
 	mockClient.AssertCalled(t, "Delete", mock.Anything, secret, client.PropagationPolicy("Background"))
 }
 
-func TestController_Reconcile_FilterByObjectName(t *testing.T) {
+func TestController_Reconcile_FilterObjectByName(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -462,7 +462,7 @@ func TestController_Reconcile_FilterByObjectName(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
+func TestController_Reconcile_FilterObjectByNamespace(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -502,7 +502,7 @@ func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByLabels(t *testing.T) {
+func TestController_Reconcile_FilterObjectByLabels(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -542,7 +542,7 @@ func TestController_Reconcile_FilterByLabels(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByAnnotations(t *testing.T) {
+func TestController_Reconcile_FilterObjectByAnnotations(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -624,7 +624,7 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterEvent(t *testing.T) {
+func TestController_FilterEvent(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -632,12 +632,14 @@ func TestController_Reconcile_FilterEvent(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Time{Time: time.Now()},
 				Generation:        int64(1),
+				ResourceVersion:   "1",
 			},
 		}
 		newSecret = &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Time{Time: time.Now()},
 				Generation:        int64(2),
+				ResourceVersion:   "2",
 			},
 		}
 		watcher = (&v1alpha1.Watcher{
@@ -648,7 +650,8 @@ func TestController_Reconcile_FilterEvent(t *testing.T) {
 							CreationTimeout: ptr.To("1h"),
 						},
 						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged: ptr.To(true),
+							GenerationChanged:      ptr.To(true),
+							ResourceVersionChanged: ptr.To(true),
 						},
 					},
 				},
@@ -669,13 +672,18 @@ func TestController_Reconcile_FilterEvent(t *testing.T) {
 	assert.False(t, filtered)
 }
 
-func TestController_Reconcile_FilterEventCreateCreationTimeout(t *testing.T) {
+func TestController_FilterEvent_CreationTimeouts(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
-		secret     = &v1.Secret{
+		newSecret  = &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)},
+				CreationTimestamp: metav1.Time{Time: time.Now()},
+			},
+		}
+		oldSecret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Time{Time: time.Now().Add(-8 * time.Hour)},
 			},
 		}
 		watcher = (&v1alpha1.Watcher{
@@ -683,7 +691,7 @@ func TestController_Reconcile_FilterEventCreateCreationTimeout(t *testing.T) {
 				Filter: v1alpha1.Filter{
 					Event: v1alpha1.EventFilter{
 						Create: v1alpha1.CreateEventFilter{
-							CreationTimeout: ptr.To("10s"),
+							CreationTimeout: ptr.To("1h"),
 						},
 					},
 				},
@@ -693,15 +701,105 @@ func TestController_Reconcile_FilterEventCreateCreationTimeout(t *testing.T) {
 	)
 
 	// when
-	filtered := controller.Create(event.CreateEvent{
-		Object: secret,
+	oldSecretFiltered := controller.Create(event.CreateEvent{
+		Object: oldSecret,
+	}) == false
+	newSecretFiltered := controller.Create(event.CreateEvent{
+		Object: newSecret,
 	}) == false
 
 	// then
-	assert.True(t, filtered)
+	assert.True(t, oldSecretFiltered)
+	assert.False(t, newSecretFiltered)
 }
 
-func TestController_Reconcile_FilterEventUpdateGenerationChangedTrue(t *testing.T) {
+func TestController_FilterEvent_GenerationChanged(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		gen1Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(1),
+			},
+		}
+		gen2Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Generation: int64(2),
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							GenerationChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	differentGenFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: gen1Secret,
+		ObjectNew: gen2Secret,
+	}) == false
+	sameGenFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: gen2Secret,
+		ObjectNew: gen2Secret,
+	}) == false
+
+	// then
+	assert.False(t, differentGenFiltered)
+	assert.True(t, sameGenFiltered)
+}
+
+func TestController_FilterEvent_ResourceVersionChanged(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		res1Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				ResourceVersion: "1",
+			},
+		}
+		res2Secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				ResourceVersion: "2",
+			},
+		}
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							ResourceVersionChanged: ptr.To(true),
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when
+	differentResFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: res1Secret,
+		ObjectNew: res2Secret,
+	}) == false
+	sameResFiltered := controller.Update(event.UpdateEvent{
+		ObjectOld: res2Secret,
+		ObjectNew: res2Secret,
+	}) == false
+
+	// then
+	assert.False(t, differentResFiltered)
+	assert.True(t, sameResFiltered)
+}
+
+func TestController_FilterEvent_UpdateGenerationChangedTrue(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
@@ -739,7 +837,7 @@ func TestController_Reconcile_FilterEventUpdateGenerationChangedTrue(t *testing.
 	assert.True(t, filtered)
 }
 
-func TestController_Reconcile_FilterEventUpdateGenerationChangedFalse(t *testing.T) {
+func TestController_FilterEvent_UpdateGenerationChangedFalse(t *testing.T) {
 	// given
 	var (
 		mockClient = new(client2.MockClient)
