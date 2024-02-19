@@ -16,4 +16,5 @@ linters-settings:
     max-complexity: 12
 run:
   go: '1.22'
+  timeout: 10m
   tests: false
