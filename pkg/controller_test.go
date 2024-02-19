@@ -352,7 +352,7 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	cancel()
 }
 
-func TestController_Reconcile_DeleteObjectOnSuccessOption(t *testing.T) {
+func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 	// given
 	var (
 		ctx     = context.Background()
@@ -422,7 +422,7 @@ func TestController_Reconcile_DeleteObjectOnSuccessOption(t *testing.T) {
 	mockClient.AssertCalled(t, "Delete", mock.Anything, secret, client.PropagationPolicy("Background"))
 }
 
-func TestController_Reconcile_FilterByObjectName(t *testing.T) {
+func TestController_Reconcile_FilterObjectByName(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -462,7 +462,7 @@ func TestController_Reconcile_FilterByObjectName(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
+func TestController_Reconcile_FilterObjectByNamespace(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -502,7 +502,7 @@ func TestController_Reconcile_FilterByObjectNamespace(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByLabels(t *testing.T) {
+func TestController_Reconcile_FilterObjectByLabels(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
@@ -542,7 +542,7 @@ func TestController_Reconcile_FilterByLabels(t *testing.T) {
 	assert.False(t, result.Requeue)
 }
 
-func TestController_Reconcile_FilterByAnnotations(t *testing.T) {
+func TestController_Reconcile_FilterObjectByAnnotations(t *testing.T) {
 	// given
 	var (
 		ctx              = context.Background()
