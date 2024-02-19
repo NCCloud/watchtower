@@ -138,6 +138,19 @@ spec:
                     description: Kind is the kind of the object like Deployment, Secret,
                       MyCustomResource etc.
                     type: string
+                  options:
+                    description: Options allows you to set source specific options
+                    properties:
+                      onSuccess:
+                        description: OnSuccess options will be used when the source
+                          is successfully processed.
+                        properties:
+                          deleteObject:
+                            description: DeleteObject will delete the object after
+                              it successfully processed.
+                            type: boolean
+                        type: object
+                    type: object
                 type: object
               valuesFrom:
                 description: ValuesFrom allows merging variables from references.

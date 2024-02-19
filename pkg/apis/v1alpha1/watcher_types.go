@@ -39,17 +39,6 @@ type WatcherSpec struct {
 	ValuesFrom ValuesFrom `json:"valuesFrom,omitempty"`
 }
 
-type ValuesFrom struct {
-	// Secrets are the references that will be merged from.
-	Secrets []SecretKeySelector `json:"secrets,omitempty"`
-}
-
-type SecretKeySelector struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Key       string `json:"key"`
-}
-
 type Source struct {
 	// APIVersion is api version of the object like apps/v1, v1 etc.
 	APIVersion string `json:"apiVersion,omitempty" yaml:"apiVersion"`
@@ -57,6 +46,18 @@ type Source struct {
 	Kind string `json:"kind,omitempty" yaml:"kind"`
 	// Concurrency is how many concurrent workers will be working on processing this source.
 	Concurrency *int `json:"concurrency,omitempty" yaml:"concurrency"`
+	// Options allows you to set source specific options
+	Options SourceOptions `json:"options,omitempty" yaml:"options"`
+}
+
+type SourceOptions struct {
+	// OnSuccess options will be used when the source is successfully processed.
+	OnSuccess OnSuccessSourceOptions `json:"onSuccess,omitempty" yaml:"onSuccess"`
+}
+
+type OnSuccessSourceOptions struct {
+	// DeleteObject will delete the object after it successfully processed.
+	DeleteObject bool `json:"deleteObject,omitempty" yaml:"deleteObject"`
 }
 
 type Filter struct {
@@ -97,14 +98,14 @@ type ObjectFilter struct {
 	// Annotations are the labels to filter object by annotation.
 	Annotations *map[string]string `json:"annotations,omitempty" yaml:"annotations"`
 	// Custom is the most advanced way of filtering object by their contents and multiple fields by templating.
-	Custom   *ObjectFilterCustom `json:"custom,omitempty" yaml:"custom"`
+	Custom   *CustomObjectFilter `json:"custom,omitempty" yaml:"custom"`
 	Compiled struct {
 		Name      *regexp.Regexp
 		Namespace *regexp.Regexp
 	} `json:"-"`
 }
 
-type ObjectFilterCustom struct {
+type CustomObjectFilter struct {
 	// Template is the template that will be used to compare result with Result and filter accordingly.
 	Template string `json:"template,omitempty" yaml:"template"`
 	// Result is the result that will be used to compare with the result of the Template.
@@ -127,6 +128,17 @@ type Destination struct {
 		URLTemplate  *template.Template
 		BodyTemplate *template.Template
 	} `json:"-"`
+}
+
+type ValuesFrom struct {
+	// Secrets are the references that will be merged from.
+	Secrets []SecretKeySelector `json:"secrets,omitempty"`
+}
+
+type SecretKeySelector struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Key       string `json:"key"`
 }
 
 func (s *Source) NewObject() *unstructured.Unstructured {
