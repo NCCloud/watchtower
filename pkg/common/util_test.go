@@ -2,9 +2,10 @@ package common
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"testing"
 )
 
 func TestTemplateParse(t *testing.T) {
@@ -49,7 +50,7 @@ func TestMust(t *testing.T) {
 func TestMustReturn(t *testing.T) {
 	// given
 	err := errors.New("test")
-	var data = "test"
+	data := "test"
 
 	// when
 	willPanic := func() { MustReturn(data, err) }

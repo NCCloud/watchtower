@@ -185,7 +185,7 @@ func TestController_Reconcile(t *testing.T) {
 
 func TestController_ReconcileIntegration(t *testing.T) {
 	// given
-	var ctx, cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	var request *http.Request
 	var body []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -290,9 +290,9 @@ func TestController_ReconcileIntegration(t *testing.T) {
 
 func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	// given
-	var ctx, cancel = context.WithCancel(context.Background())
-	var testCount = gofakeit.IntRange(5, 30)
-	var callCount = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	testCount := gofakeit.IntRange(5, 30)
+	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount = callCount + 1
 		w.Write([]byte("OK"))
