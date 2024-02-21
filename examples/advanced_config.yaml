@@ -16,6 +16,7 @@ spec:
         creationTimeout: "1h"
       update:
         generationChanged: true
+        resourceVersionChanged: true
     object:
       name: ".*website.*"
       namespace: "customer-namespace.*"
