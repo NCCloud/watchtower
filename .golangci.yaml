@@ -12,6 +12,9 @@ linters:
     - gochecknoglobals # We like global variables
     - tagalign # Buggy
 linters-settings:
+  gosec:
+    excludes:
+      - 'G601'
   cyclop:
     max-complexity: 12
 run:

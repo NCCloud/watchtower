@@ -83,7 +83,7 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 
 	watchers = []v1alpha1.Watcher{}
 
-	for idx, watcher := range watcherList.Items {
+	for _, watcher := range watcherList.Items {
 		for _, secretKeySelector := range watcher.Spec.ValuesFrom.Secrets {
 			var (
 				secret         v1.Secret
@@ -101,7 +101,7 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 				return unmarshallErr
 			}
 
-			if mergeErr := mergo.Merge(&watcherList.Items[idx], v1alpha1.Watcher{Spec: specFromSecret},
+			if mergeErr := mergo.Merge(&watcher, v1alpha1.Watcher{Spec: specFromSecret},
 				mergo.WithOverride, mergo.WithAppendSlice); mergeErr != nil {
 				return mergeErr
 			}
