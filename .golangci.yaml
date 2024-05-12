@@ -11,6 +11,7 @@ linters:
     - depguard # Disallows to use non-listed packages
     - gochecknoglobals # We like global variables
     - tagalign # Buggy
+    - fatcontext
 linters-settings:
   gosec:
     excludes:
