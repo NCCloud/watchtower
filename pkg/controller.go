@@ -173,7 +173,7 @@ func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) 
 
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named(r.watcher.Name).
+		Named(r.watcher.GetName()).
 		WithEventFilter(r.FilterEvent()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
