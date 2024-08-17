@@ -16,6 +16,7 @@ import (
 
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	http2 "github.com/nccloud/watchtower/mocks/net/http"
 	cache2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
 	client2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/client"
@@ -202,6 +203,9 @@ func TestController_ReconcileIntegration(t *testing.T) {
 	}
 
 	watcher := (&v1alpha1.Watcher{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: uuid.NewString(),
+		},
 		Spec: v1alpha1.WatcherSpec{
 			Source: v1alpha1.Source{
 				APIVersion:  "v1",
@@ -306,6 +310,9 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 	}
 
 	watcher := (&v1alpha1.Watcher{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: uuid.NewString(),
+		},
 		Spec: v1alpha1.WatcherSpec{
 			Source: v1alpha1.Source{
 				APIVersion:  "v1",
