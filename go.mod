@@ -3,12 +3,13 @@ module github.com/nccloud/watchtower
 go 1.23.0
 
 require (
-	dario.cat/mergo v1.0.0
+	dario.cat/mergo v1.0.1
 	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/go-co-op/gocron/v2 v2.11.0
 	github.com/go-logr/logr v1.4.2
+	github.com/google/uuid v1.6.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/stretchr/testify v1.9.0
 	k8s.io/api v0.31.0
@@ -38,7 +39,6 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
