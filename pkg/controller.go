@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -163,7 +164,9 @@ func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) 
 			return true, executeErr
 		}
 
-		if string(result) != r.watcher.Spec.Filter.Object.Custom.Result {
+		actual := string(result)
+		expected := r.watcher.Spec.Filter.Object.Custom.Result
+		if strings.TrimSpace(actual) != strings.TrimSpace(expected) {
 			return true, nil
 		}
 	}
