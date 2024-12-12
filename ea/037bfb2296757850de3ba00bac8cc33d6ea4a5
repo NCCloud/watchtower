@@ -1,0 +1,1 @@
+{"go-coverage-action-fmt":1,"coverage_pct":85,"pkg_stats":{"github.com/nccloud/watchtower/pkg":[82.53968253968253],"github.com/nccloud/watchtower/pkg/common":[94.11764705882352]},"skipped_count":8}
