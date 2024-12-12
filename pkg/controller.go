@@ -157,16 +157,15 @@ func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) 
 		return true, nil
 	}
 
-	if r.watcher.Spec.Filter.Object.Custom != nil {
-		result, executeErr := common.TemplateExecuteForObject(
-			r.watcher.Spec.Filter.Object.Custom.Compiled.Template, obj)
+	if customFilter := r.watcher.Spec.Filter.Object.Custom; customFilter != nil {
+		renderedResult, executeErr := common.TemplateExecuteForObject(
+			customFilter.Compiled.Template, obj)
 		if executeErr != nil {
 			return true, executeErr
 		}
 
-		actual := string(result)
-		expected := r.watcher.Spec.Filter.Object.Custom.Result
-		if strings.TrimSpace(actual) != strings.TrimSpace(expected) {
+		actual := string(renderedResult)
+		if strings.TrimSpace(actual) != strings.TrimSpace(customFilter.Result) {
 			return true, nil
 		}
 	}
