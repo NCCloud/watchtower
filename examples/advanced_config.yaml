@@ -34,9 +34,9 @@ spec:
       {
         "text": "{{ .metadata.name }}"
       }
-    headers:
-      "Content-Type":
-        - "application/json"
+    headerTemplate: |
+      "Content-Type": "application/json"
+      "app_ctx": "{{ .metadata.labels.app_context }}"
   valuesFrom:
     secrets:
       - key: "foo"
