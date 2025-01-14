@@ -2,10 +2,15 @@ package common
 
 import (
 	"bytes"
+	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+const (
+	RequiredHeaderPartCount = 2
 )
 
 func TemplateParse(str string) *template.Template {
@@ -30,6 +35,21 @@ func MapContains(a, b map[string]string) bool {
 	}
 
 	return true
+}
+
+func StringToMap(str string) map[string][]string {
+	result := make(map[string][]string)
+
+	for _, line := range strings.Split(str, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), ":", RequiredHeaderPartCount)
+		if len(parts) == RequiredHeaderPartCount {
+			key := strings.TrimSpace(strings.Trim(parts[0], "\" "))
+			value := strings.TrimSpace(strings.Trim(parts[1], "\" "))
+			result[key] = append(result[key], value)
+		}
+	}
+
+	return result
 }
 
 func Must(e error) {

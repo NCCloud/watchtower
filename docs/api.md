@@ -61,8 +61,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `urlTemplate` _string_ | URLTemplate is the template field to set where will be the destination. |  |  |
 | `bodyTemplate` _string_ | BodyTemplate is the template field to set what will be sent the destination. |  |  |
+| `headerTemplate` _string_ | HeaderTemplate is the template field to set what will be sent the destination. |  |  |
 | `method` _string_ | Method is the HTTP method will be used while calling the destination endpoints. |  |  |
-| `headers` _object (keys:string, values:string array)_ | Method is the HTTP headers will be used while calling the destination endpoints. |  |  |
 
 
 #### EventFilter

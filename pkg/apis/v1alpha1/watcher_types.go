@@ -126,13 +126,15 @@ type Destination struct {
 	URLTemplate string `json:"urlTemplate,omitempty" yaml:"urlTemplate"`
 	// BodyTemplate is the template field to set what will be sent the destination.
 	BodyTemplate string `json:"bodyTemplate,omitempty" yaml:"bodyTemplate"`
+	// HeaderTemplate is the template field to set what will be sent the destination.
+	HeaderTemplate string `json:"headerTemplate,omitempty" yaml:"headerTemplate"`
 	// Method is the HTTP method will be used while calling the destination endpoints.
 	Method string `json:"method,omitempty" yaml:"method"`
-	// Method is the HTTP headers will be used while calling the destination endpoints.
-	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers"`
+	// Compiled is the compiled templates.
 	Compiled struct {
-		URLTemplate  *template.Template
-		BodyTemplate *template.Template
+		URLTemplate    *template.Template
+		BodyTemplate   *template.Template
+		HeaderTemplate *template.Template
 	} `json:"-"`
 }
 
@@ -191,6 +193,8 @@ func (w *Watcher) Compile() *Watcher {
 		TemplateParse(newWatcher.Spec.Destination.URLTemplate)
 	newWatcher.Spec.Destination.Compiled.BodyTemplate = common.
 		TemplateParse(newWatcher.Spec.Destination.BodyTemplate)
+	newWatcher.Spec.Destination.Compiled.HeaderTemplate = common.
+		TemplateParse(newWatcher.Spec.Destination.HeaderTemplate)
 
 	return newWatcher
 }

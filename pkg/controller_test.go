@@ -127,9 +127,8 @@ func TestController_Reconcile(t *testing.T) {
 					URLTemplate:  "www.test.com/{{ index .data \"my-key\" }}-in-url",
 					BodyTemplate: "{{ index .data \"my-key\" }}-in-template",
 					Method:       "POST",
-					Headers: map[string][]string{
-						"Content-Type": {"application/custom"},
-					},
+					HeaderTemplate: `key: {{ index .data "my-key" }}
+									key2: {{ index .data "my-key2" }}`,
 				},
 			},
 		}).Compile()
@@ -151,7 +150,8 @@ func TestController_Reconcile(t *testing.T) {
 					},
 				},
 				"data": map[string]interface{}{
-					"my-key": "my-value",
+					"my-key":  "my-value",
+					"my-key2": "my-value2",
 				},
 			},
 		}
@@ -176,7 +176,9 @@ func TestController_Reconcile(t *testing.T) {
 	assert.False(t, result.Requeue)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
-		headerMatched := reflect.DeepEqual(r.Header.Get("Content-Type"), "application/custom") && len(r.Header) == 1
+		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) &&
+			reflect.DeepEqual(r.Header["key2"], []string{"my-value2"}) &&
+			len(r.Header) == 2
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"
@@ -229,10 +231,10 @@ func TestController_ReconcileIntegration(t *testing.T) {
 				},
 			},
 			Destination: v1alpha1.Destination{
-				URLTemplate:  fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
-				BodyTemplate: "{{ .data.value }}",
-				Method:       "POST",
-				Headers:      map[string][]string{"Bearer": {gofakeit.UUID()}},
+				URLTemplate:    fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
+				BodyTemplate:   "{{ .data.value }}",
+				Method:         "POST",
+				HeaderTemplate: "Authorization: {{ .data.authorization | b64dec }}",
 			},
 		},
 	}).Compile()
@@ -249,9 +251,10 @@ func TestController_ReconcileIntegration(t *testing.T) {
 			},
 		},
 		Data: map[string][]byte{
-			"my-key": []byte("my-value"),
-			"id":     []byte(gofakeit.UUID()),
-			"value":  []byte(gofakeit.UUID()),
+			"my-key":        []byte("my-value"),
+			"id":            []byte(gofakeit.UUID()),
+			"value":         []byte(gofakeit.UUID()),
+			"authorization": []byte(gofakeit.UUID()),
 		},
 	}
 
@@ -277,9 +280,9 @@ func TestController_ReconcileIntegration(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		if request != nil {
 			methodMatches := request.Method == watcher.Spec.Destination.Method
-			headerMatches := request.Header.Get("Bearer") == watcher.Spec.Destination.Headers["Bearer"][0]
-			urlMatches := fmt.Sprintf("http://%s%s", request.Host, request.URL.Path) == strings.ReplaceAll(watcher.Spec.Destination.URLTemplate,
-				"{{ .data.id | b64dec }}", string(secret.Data["id"]))
+			headerMatches := request.Header.Get("Authorization") == string(secret.Data["authorization"])
+			urlMatches := fmt.Sprintf("http://%s%s", request.Host, request.URL.Path) ==
+				strings.ReplaceAll(watcher.Spec.Destination.URLTemplate, "{{ .data.id | b64dec }}", string(secret.Data["id"]))
 			body, _ = io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewBuffer(body)))
 			bodyMatches := string(body) == strings.ReplaceAll(watcher.Spec.Destination.BodyTemplate,
 				"{{ .data.value }}", string(secret.Data["value"]))
@@ -373,12 +376,10 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 					},
 				},
 				Destination: v1alpha1.Destination{
-					URLTemplate:  "www.test.com/{{ index .data \"my-key\" }}-in-url",
-					BodyTemplate: "{{ index .data \"my-key\" }}-in-template",
-					Method:       "POST",
-					Headers: map[string][]string{
-						"Content-Type": {"application/custom"},
-					},
+					URLTemplate:    "www.test.com/{{ index .data \"my-key\" }}-in-url",
+					BodyTemplate:   "{{ index .data \"my-key\" }}-in-template",
+					Method:         "POST",
+					HeaderTemplate: "key: {{ index .data \"my-key\" }}",
 				},
 			},
 		}).Compile()
@@ -420,7 +421,7 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 	assert.False(t, result.Requeue)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
-		headerMatched := reflect.DeepEqual(r.Header.Get("Content-Type"), "application/custom") && len(r.Header) == 1
+		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) && len(r.Header) == 1
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"

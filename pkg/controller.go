@@ -82,13 +82,18 @@ func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) e
 		return bodyErr
 	}
 
+	headers, headersErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.HeaderTemplate, obj)
+	if headersErr != nil {
+		return headersErr
+	}
+
 	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Spec.Destination.Method,
 		string(url), bytes.NewReader(body))
 	if requestErr != nil {
 		return requestErr
 	}
 
-	request.Header = r.watcher.Spec.Destination.Headers
+	request.Header = common.StringToMap(string(headers))
 
 	doRequest, doRequestErr := r.httpClient.Do(request)
 	if doRequestErr != nil {
