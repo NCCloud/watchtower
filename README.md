@@ -109,9 +109,8 @@ spec:
       urlTemplate: "YOUR_API_ENDPOINT"
       bodyTemplate: "{\"ca.crt\":\"{{ index .data \"ca.crt\" }}\",\"token\":\"{{ index .data \"token\" }}\"}"
       method: "PATCH"
-      headers:
-        Content-Type:
-          - "application/json"
+      headerTemplate: |
+        "Content-Type": "application/json"
 ```
 
 ## 🏷️ Versioning

@@ -44,14 +44,10 @@ spec:
                     description: BodyTemplate is the template field to set what will
                       be sent the destination.
                     type: string
-                  headers:
-                    additionalProperties:
-                      items:
-                        type: string
-                      type: array
-                    description: Method is the HTTP headers will be used while calling
-                      the destination endpoints.
-                    type: object
+                  headerTemplate:
+                    description: HeaderTemplate is the template field to set what
+                      will be sent the destination.
+                    type: string
                   method:
                     description: Method is the HTTP method will be used while calling
                       the destination endpoints.
