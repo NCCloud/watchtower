@@ -12,9 +12,9 @@ spec:
     listKind: WatcherList
     plural: watchers
     singular: watcher
-  scope: Cluster
+  scope: Namespaced
   versions:
-  - name: v1alpha1
+  - name: v1alpha2
     schema:
       openAPIV3Schema:
         properties:
@@ -60,71 +60,12 @@ spec:
               filter:
                 description: Filter helps filter objects during the watching process.
                 properties:
-                  event:
+                  create:
                     description: Event allows you to set event based filters
-                    properties:
-                      create:
-                        description: Create allows you to set create event based filters
-                        properties:
-                          creationTimeout:
-                            description: |-
-                              CreationTimeout sets what will be the maximum duration can past for the objects in create queue.
-                              It also helps to minimize number of object that will be re-sent when application restarts.
-                            type: string
-                        type: object
-                      update:
-                        description: Update allows you to set update event based filters
-                        properties:
-                          generationChanged:
-                            description: |-
-                              GenerationChanged sets if generation should be different or same according to value.
-                              It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.
-                              By default, It's not set.
-                            type: boolean
-                          resourceVersionChanged:
-                            description: |-
-                              ResourceVersionChanged sets if resource version should be different or same according to value.
-                              It's useful when you don't want to re-send objects if their resource version is not changed,
-                              like it will happen on full re-synchronization. By default, It's not set.
-                            type: boolean
-                        type: object
-                    type: object
-                  object:
+                    type: string
+                  update:
                     description: Object allows you to set object based filters
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: Annotations are the labels to filter object by
-                          annotation.
-                        type: object
-                      custom:
-                        description: Custom is the most advanced way of filtering
-                          object by their contents and multiple fields by templating.
-                        properties:
-                          result:
-                            description: Result is the result that will be used to
-                              compare with the result of the Template.
-                            type: string
-                          template:
-                            description: Template is the template that will be used
-                              to compare result with Result and filter accordingly.
-                            type: string
-                        type: object
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: Labels are the labels to filter object by labels.
-                        type: object
-                      name:
-                        description: Name is the regular expression to filter object
-                          Its name.
-                        type: string
-                      namespace:
-                        description: Namespace is the regular expression to filter
-                          object Its namespace.
-                        type: string
-                    type: object
+                    type: string
                 type: object
               source:
                 description: Source defines the source objects of the watching process.
@@ -137,44 +78,49 @@ spec:
                     description: Concurrency is how many concurrent workers will be
                       working on processing this source.
                     type: integer
-                  kind:
-                    description: Kind is the kind of the object like Deployment, Secret,
-                      MyCustomResource etc.
-                    type: string
-                  options:
+                  hooks:
                     description: Options allows you to set source specific options
                     properties:
                       onSuccess:
                         description: OnSuccess options will be used when the source
                           is successfully processed.
                         properties:
-                          deleteObject:
-                            description: DeleteObject will delete the object after
-                              it successfully processed.
+                          delete:
+                            description: Delete will delete the object after it successfully
+                              processed.
                             type: boolean
                         type: object
                     type: object
+                  kind:
+                    description: Kind is the kind of the object like Deployment, Secret,
+                      MyCustomResource etc.
+                    type: string
                 type: object
               valuesFrom:
-                description: ValuesFrom allows merging variables from references.
-                properties:
-                  secrets:
-                    description: Secrets are the references that will be merged from.
-                    items:
-                      properties:
-                        key:
-                          type: string
-                        name:
-                          type: string
-                        namespace:
-                          type: string
-                      required:
-                      - key
-                      - name
-                      - namespace
-                      type: object
-                    type: array
-                type: object
+                description: |-
+                  ValuesFrom defines a list of sources (Secret/ConfigMap) to fetch values from.
+                  They will be merged with the values provided in the Values field.
+                items:
+                  description: ValuesFrom defines a reference to a Secret or ConfigMap
+                    to retrieve values.
+                  properties:
+                    key:
+                      description: Key is the specific key within the Secret or ConfigMap
+                        to retrieve the value from.
+                      type: string
+                    kind:
+                      description: Kind specifies whether the source is a Secret or
+                        ConfigMap.
+                      type: string
+                    name:
+                      description: Name is the name of the Secret or ConfigMap.
+                      type: string
+                  required:
+                  - key
+                  - kind
+                  - name
+                  type: object
+                type: array
             type: object
         type: object
     served: true

@@ -10,7 +10,7 @@ linters:
     - depguard # Disallows to use non-listed packages
     - gochecknoglobals # We like global variables
     - tagalign # Buggy
-    - fatcontext
+    - err113 # We like to use dynamic errors
 linters-settings:
   gosec:
     excludes:

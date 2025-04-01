@@ -1,19 +1,14 @@
 apiVersion: cloud.spaceship.com/v1alpha2
 kind: Watcher
 metadata:
-  name: simple-watcher
+  name: simple-watcher-2
   namespace: default
 spec:
   source:
     apiVersion: "v1"
     kind: "Pod"
-  filter:
-    create: |
-      now() - timestamp(new.metadata.creationTimestamp) < duration("1h")
-    update: |
-      new.metadata.generation != old.metadata.generation
   destination:
     method: "POST"
     urlTemplate: "https://webhook.site/37358195-fc85-474e-a22c-a4eb7ae5cc4f"
     bodyTemplate: | 
-      {{ "simple-watcher" }}
+      {{ "simple-watcher-2 }}
