@@ -20,6 +20,7 @@ func IgnoreError[T any](value T, _ error) T {
 
 func StringToMap(str string) map[string][]string {
 	const requiredPartCount = 2
+
 	result := make(map[string][]string)
 
 	for _, line := range strings.Split(str, "\n") {

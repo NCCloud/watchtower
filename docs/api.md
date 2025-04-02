@@ -49,8 +49,6 @@ _Appears in:_
 | `update` _string_ | Object allows you to set object based filters |  |  |
 
 
-
-
 #### Source
 
 

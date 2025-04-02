@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -97,8 +96,6 @@ func (r *Processor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstr
 }
 
 func (r *Processor) Send(ctx context.Context, obj *unstructured.Unstructured) error {
-	slog.Info("Sending object", "name", obj.GetName(), "namespace", obj.GetNamespace())
-
 	headerTemplate, headerTemplateParseErr := r.templateRenderer.Parse(r.watcher.Spec.Destination.HeaderTemplate)
 	if headerTemplateParseErr != nil {
 		return headerTemplateParseErr
@@ -114,17 +111,17 @@ func (r *Processor) Send(ctx context.Context, obj *unstructured.Unstructured) er
 		return urlTemplateParseErr
 	}
 
-	header, headerErr := r.templateRenderer.Render(headerTemplate, obj)
+	header, headerErr := r.templateRenderer.Render(headerTemplate, obj.Object)
 	if headerErr != nil {
 		return headerErr
 	}
 
-	body, bodyErr := r.templateRenderer.Render(bodyTemplate, obj)
+	body, bodyErr := r.templateRenderer.Render(bodyTemplate, obj.Object)
 	if bodyErr != nil {
 		return bodyErr
 	}
 
-	url, urlErr := r.templateRenderer.Render(urlTemplate, obj)
+	url, urlErr := r.templateRenderer.Render(urlTemplate, obj.Object)
 	if urlErr != nil {
 		return urlErr
 	}

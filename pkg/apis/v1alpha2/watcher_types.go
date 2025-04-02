@@ -1,8 +1,6 @@
 package v1alpha2
 
 import (
-	"text/template"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -24,7 +22,7 @@ type Watcher struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec WatcherSpec `json:"spec,omitempty"`
+	Spec WatcherSpec `json:"spec,omitempty" yaml:"spec,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -123,19 +121,6 @@ type Destination struct {
 
 	// Method is the HTTP method will be used while calling the destination endpoints.
 	Method string `json:"method,omitempty" yaml:"method"`
-
-	// Compiled contains the compiled fields of the destination.
-	Compiled struct {
-		URLTemplate    *template.Template
-		BodyTemplate   *template.Template
-		HeaderTemplate *template.Template
-	} `json:"-" yaml:"-"`
-}
-
-type SecretKeySelector struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Key       string `json:"key"`
 }
 
 func init() {

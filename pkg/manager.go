@@ -7,19 +7,24 @@ import (
 	"reflect"
 	"time"
 
+	"dario.cat/mergo"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
 	"github.com/nccloud/watchtower/pkg/common"
 	"github.com/puzpuzpuz/xsync/v3"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	cache2 "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
 const (
 	baseDelay = 100 * time.Millisecond
-	maxDelay  = 5 * time.Minute
+	maxDelay  = 15 * time.Minute
 )
 
 type WatcherItem struct {
@@ -35,44 +40,51 @@ type WorkItem struct {
 	oldObject *unstructured.Unstructured
 }
 
-type Manager struct {
+type WatcherManager struct {
 	cache    cache.Cache
 	watchers *xsync.MapOf[string, *WatcherItem]
 }
 
-func NewManager(cache cache.Cache) *Manager {
-	return &Manager{
+func NewManager(cache cache.Cache) *WatcherManager {
+	return &WatcherManager{
 		cache:    cache,
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 }
 
-func (m *Manager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
+func (m *WatcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 	var (
 		logger         = slog.With("watcher", fmt.Sprintf("%s/%s", watcher.Namespace, watcher.Name))
-		processor      = NewProcessor(m.cache, watcher)
 		watcherID      = string(watcher.GetUID())
-		rateLimiter    = workqueue.NewTypedItemExponentialFailureRateLimiter[WorkItem](baseDelay, maxDelay)
+		processor      = NewProcessor(m.cache, watcher)
 		sourceInformer = common.MustReturn(m.cache.GetInformer(ctx, watcher.Spec.Source.NewInstance()))
+		watcherItem    = &WatcherItem{
+			watcher: watcher.DeepCopy(),
+			queue: workqueue.NewTypedRateLimitingQueue[WorkItem](
+				workqueue.NewTypedItemExponentialFailureRateLimiter[WorkItem](baseDelay, maxDelay)),
+			stopCh:     make(chan bool),
+			processing: xsync.NewMapOf[string, bool](),
+		}
 	)
 
-	watcherItem := &WatcherItem{
-		watcher:    watcher.DeepCopy(),
-		queue:      workqueue.NewTypedRateLimitingQueue[WorkItem](rateLimiter),
-		stopCh:     make(chan bool),
-		processing: xsync.NewMapOf[string, bool](),
+	if handleValuesFromErr := m.handleValuesFrom(ctx, watcher); handleValuesFromErr != nil {
+		logger.Error("Failed to handle valuesFrom", "error", handleValuesFromErr)
+
+		return
 	}
 
 	registration, addEventHandlerErr := sourceInformer.AddEventHandler(cache2.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			produce(watcherItem, obj, nil, logger)
+			m.produceItem(watcherItem, obj, nil, logger)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			produce(watcherItem, newObj, oldObj, logger)
+			m.produceItem(watcherItem, newObj, oldObj, logger)
 		},
 	})
 	if addEventHandlerErr != nil {
-		panic(addEventHandlerErr)
+		logger.Error("Failed to add event handler", "error", addEventHandlerErr)
+
+		return
 	}
 
 	watcherItem.registration = registration
@@ -85,14 +97,14 @@ func (m *Manager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 				case <-watcherItem.stopCh:
 					return
 				default:
-					consume(ctx, watcherItem, processor, logger)
+					m.consumeItem(ctx, watcherItem, processor, logger)
 				}
 			}
 		}()
 	}
 }
 
-func (m *Manager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
+func (m *WatcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
 	watcherID := string(watcher.GetUID())
 
 	watcherItem, exists := m.watchers.Load(watcherID)
@@ -137,7 +149,60 @@ func (m *Manager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
 	m.watchers.Delete(watcherID)
 }
 
-func produce(watcherItem *WatcherItem, newObj interface{}, oldObj interface{}, logger *slog.Logger) {
+func (m *WatcherManager) handleValuesFrom(ctx context.Context, watcher *v1alpha2.Watcher) error {
+	for _, valuesFrom := range watcher.Spec.ValuesFrom {
+		objectKey := client.ObjectKey{
+			Name:      valuesFrom.Name,
+			Namespace: watcher.Namespace,
+		}
+
+		var data []byte
+
+		switch valuesFrom.Kind {
+		case v1alpha2.ValuesFromKindSecret:
+			secret := &corev1.Secret{}
+			if getErr := m.cache.Get(ctx, objectKey, secret); getErr != nil {
+				return getErr
+			}
+
+			secretData, keyExist := secret.Data[valuesFrom.Key]
+			if !keyExist {
+				return fmt.Errorf("key %s in secret %s not found", valuesFrom.Key, secret.Name)
+			}
+
+			data = secretData
+		case v1alpha2.ValuesFromKindConfigMap:
+			config := &corev1.ConfigMap{}
+			if getErr := m.cache.Get(ctx, objectKey, config); getErr != nil {
+				return getErr
+			}
+
+			configData, keyExist := config.Data[valuesFrom.Key]
+			if !keyExist {
+				return fmt.Errorf("key %s in configmap %s not found", valuesFrom.Key, config.Name)
+			}
+
+			data = []byte(configData)
+		default:
+			return fmt.Errorf("unsupported ValuesFrom kind %s", valuesFrom.Kind)
+		}
+
+		watcherToMerge := &v1alpha2.Watcher{}
+		if unmarshalErr := yaml.Unmarshal(data, watcherToMerge); unmarshalErr != nil {
+			return unmarshalErr
+		}
+
+		if mergeErr := mergo.Merge(watcher, watcherToMerge, mergo.WithOverride); mergeErr != nil {
+			return mergeErr
+		}
+	}
+
+	return nil
+}
+
+func (m *WatcherManager) produceItem(watcherItem *WatcherItem, newObj interface{}, oldObj interface{},
+	logger *slog.Logger,
+) {
 	var (
 		oldObject *unstructured.Unstructured
 		newObject = newObj.(*unstructured.Unstructured)
@@ -162,7 +227,9 @@ func produce(watcherItem *WatcherItem, newObj interface{}, oldObj interface{}, l
 	})
 }
 
-func consume(ctx context.Context, watcherItem *WatcherItem, processor *Processor, logger *slog.Logger) {
+func (m *WatcherManager) consumeItem(ctx context.Context, watcherItem *WatcherItem, processor *Processor,
+	logger *slog.Logger,
+) {
 	workItem, shutdown := watcherItem.queue.Get()
 	if shutdown {
 		return
@@ -187,6 +254,9 @@ func consume(ctx context.Context, watcherItem *WatcherItem, processor *Processor
 	}
 
 	if filterPass {
+		slog.Info("Sending object",
+			"name", watcherItem.watcher.GetName(), "namespace", watcherItem.watcher.GetNamespace())
+
 		if sendErr := processor.Send(ctx, workItem.newObject); sendErr != nil {
 			logger.Error("Error sending object", "error", filterErr,
 				"name", workItem.newObject.GetName(), "namespace", workItem.newObject.GetNamespace())

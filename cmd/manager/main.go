@@ -10,6 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	cache2 "k8s.io/client-go/tools/cache"
 
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
@@ -21,6 +23,7 @@ func main() {
 	scheme := runtime.NewScheme()
 	errChan := make(chan error)
 
+	common.Must(clientgoscheme.AddToScheme(scheme))
 	common.Must(v1alpha2.AddToScheme(scheme))
 
 	cache := common.MustReturn(cache.New(kubeConfig, cache.Options{
@@ -42,7 +45,7 @@ func main() {
 			oldWatcher := oldObj.(*v1alpha2.Watcher)
 			newWatcher := newObj.(*v1alpha2.Watcher)
 
-			if oldWatcher.GetGeneration() != newWatcher.GetGeneration() {
+			if oldWatcher.GetResourceVersion() != newWatcher.GetResourceVersion() {
 				slog.Info("Watcher updated", "name", newWatcher.Name, "namespace", newWatcher.Namespace)
 
 				manager.Remove(ctx, oldWatcher)
