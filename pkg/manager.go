@@ -27,6 +27,11 @@ const (
 	maxDelay  = 15 * time.Minute
 )
 
+type WatcherManager interface {
+	Add(ctx context.Context, watcher *v1alpha2.Watcher)
+	Remove(ctx context.Context, watcher *v1alpha2.Watcher)
+}
+
 type WatcherItem struct {
 	watcher      *v1alpha2.Watcher
 	queue        workqueue.TypedRateLimitingInterface[WorkItem]
@@ -40,37 +45,45 @@ type WorkItem struct {
 	oldObject *unstructured.Unstructured
 }
 
-type WatcherManager struct {
+type watcherManager struct {
 	cache    cache.Cache
 	watchers *xsync.MapOf[string, *WatcherItem]
 }
 
-func NewManager(cache cache.Cache) *WatcherManager {
-	return &WatcherManager{
+func NewManager(cache cache.Cache) WatcherManager {
+	return &watcherManager{
 		cache:    cache,
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 }
 
-func (m *WatcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
+func (m *watcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 	var (
 		logger         = slog.With("watcher", fmt.Sprintf("%s/%s", watcher.Namespace, watcher.Name))
 		watcherID      = string(watcher.GetUID())
 		processor      = NewProcessor(m.cache, watcher)
-		sourceInformer = common.MustReturn(m.cache.GetInformer(ctx, watcher.Spec.Source.NewInstance()))
-		watcherItem    = &WatcherItem{
-			watcher: watcher.DeepCopy(),
-			queue: workqueue.NewTypedRateLimitingQueue[WorkItem](
-				workqueue.NewTypedItemExponentialFailureRateLimiter[WorkItem](baseDelay, maxDelay)),
-			stopCh:     make(chan bool),
-			processing: xsync.NewMapOf[string, bool](),
-		}
+		sourceInstance = watcher.Spec.Source.NewInstance()
 	)
+
+	sourceInformer, getInformerErr := m.cache.GetInformer(ctx, sourceInstance)
+	if getInformerErr != nil {
+		logger.Error("Failed to get informer", "error", getInformerErr)
+
+		return
+	}
 
 	if handleValuesFromErr := m.handleValuesFrom(ctx, watcher); handleValuesFromErr != nil {
 		logger.Error("Failed to handle valuesFrom", "error", handleValuesFromErr)
 
 		return
+	}
+
+	watcherItem := &WatcherItem{
+		watcher: watcher.DeepCopy(),
+		queue: workqueue.NewTypedRateLimitingQueue[WorkItem](
+			workqueue.NewTypedItemExponentialFailureRateLimiter[WorkItem](baseDelay, maxDelay)),
+		stopCh:     make(chan bool),
+		processing: xsync.NewMapOf[string, bool](),
 	}
 
 	registration, addEventHandlerErr := sourceInformer.AddEventHandler(cache2.ResourceEventHandlerFuncs{
@@ -104,7 +117,7 @@ func (m *WatcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 	}
 }
 
-func (m *WatcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
+func (m *watcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
 	watcherID := string(watcher.GetUID())
 
 	watcherItem, exists := m.watchers.Load(watcherID)
@@ -149,7 +162,7 @@ func (m *WatcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) 
 	m.watchers.Delete(watcherID)
 }
 
-func (m *WatcherManager) handleValuesFrom(ctx context.Context, watcher *v1alpha2.Watcher) error {
+func (m *watcherManager) handleValuesFrom(ctx context.Context, watcher *v1alpha2.Watcher) error {
 	for _, valuesFrom := range watcher.Spec.ValuesFrom {
 		objectKey := client.ObjectKey{
 			Name:      valuesFrom.Name,
@@ -200,7 +213,7 @@ func (m *WatcherManager) handleValuesFrom(ctx context.Context, watcher *v1alpha2
 	return nil
 }
 
-func (m *WatcherManager) produceItem(watcherItem *WatcherItem, newObj interface{}, oldObj interface{},
+func (m *watcherManager) produceItem(watcherItem *WatcherItem, newObj interface{}, oldObj interface{},
 	logger *slog.Logger,
 ) {
 	var (
@@ -214,7 +227,7 @@ func (m *WatcherManager) produceItem(watcherItem *WatcherItem, newObj interface{
 	}
 
 	if oldObj != nil {
-		oldObject = newObj.(*unstructured.Unstructured)
+		oldObject = oldObj.(*unstructured.Unstructured)
 	}
 
 	logger.Info("Object queued", "apiVersion", newObject.GetAPIVersion(),
@@ -227,7 +240,7 @@ func (m *WatcherManager) produceItem(watcherItem *WatcherItem, newObj interface{
 	})
 }
 
-func (m *WatcherManager) consumeItem(ctx context.Context, watcherItem *WatcherItem, processor *Processor,
+func (m *watcherManager) consumeItem(ctx context.Context, watcherItem *WatcherItem, processor WatcherProcessor,
 	logger *slog.Logger,
 ) {
 	workItem, shutdown := watcherItem.queue.Get()
@@ -258,7 +271,7 @@ func (m *WatcherManager) consumeItem(ctx context.Context, watcherItem *WatcherIt
 			"name", watcherItem.watcher.GetName(), "namespace", watcherItem.watcher.GetNamespace())
 
 		if sendErr := processor.Send(ctx, workItem.newObject); sendErr != nil {
-			logger.Error("Error sending object", "error", filterErr,
+			logger.Error("Error sending object", "error", sendErr,
 				"name", workItem.newObject.GetName(), "namespace", workItem.newObject.GetNamespace())
 
 			watcherItem.queue.AddRateLimited(workItem)

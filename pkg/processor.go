@@ -21,15 +21,20 @@ import (
 	"github.com/nccloud/watchtower/pkg/common"
 )
 
-type Processor struct {
+type WatcherProcessor interface {
+	Filter(ctx context.Context, oldObj, newObj *unstructured.Unstructured) (bool, error)
+	Send(ctx context.Context, obj *unstructured.Unstructured) error
+}
+
+type watcherProcessor struct {
 	client           cache.Cache
 	watcher          *v1alpha2.Watcher
 	httpClient       *http.Client
 	templateRenderer *common.TemplateRenderer
 }
 
-func NewProcessor(client cache.Cache, watcher *v1alpha2.Watcher) *Processor {
-	return &Processor{
+func NewProcessor(client cache.Cache, watcher *v1alpha2.Watcher) WatcherProcessor {
+	return &watcherProcessor{
 		client:           client,
 		httpClient:       &http.Client{},
 		watcher:          watcher,
@@ -37,7 +42,7 @@ func NewProcessor(client cache.Cache, watcher *v1alpha2.Watcher) *Processor {
 	}
 }
 
-func (r *Processor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstructured) (bool, error) {
+func (r *watcherProcessor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstructured) (bool, error) {
 	isUpdate := oldObj != nil && oldObj.GetResourceVersion() != newObj.GetResourceVersion()
 
 	expression := r.watcher.Spec.Filter.Create
@@ -95,7 +100,7 @@ func (r *Processor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstr
 	return result, nil
 }
 
-func (r *Processor) Send(ctx context.Context, obj *unstructured.Unstructured) error {
+func (r *watcherProcessor) Send(ctx context.Context, obj *unstructured.Unstructured) error {
 	headerTemplate, headerTemplateParseErr := r.templateRenderer.Parse(r.watcher.Spec.Destination.HeaderTemplate)
 	if headerTemplateParseErr != nil {
 		return headerTemplateParseErr

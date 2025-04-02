@@ -6,9 +6,17 @@ packages:
   sigs.k8s.io/controller-runtime/pkg/cache:
     interfaces:
       Cache:
+      Informer:
   sigs.k8s.io/controller-runtime/pkg/manager:
     interfaces:
       Manager:
+  k8s.io/client-go/tools/cache:
+    interfaces:
+      ResourceEventHandlerRegistration:
+  github.com/nccloud/watchtower/pkg:
+    interfaces:
+      WatcherManager:
+      WatcherProcessor:
   net/http:
     interfaces:
       RoundTripper:

@@ -34,3 +34,7 @@ func StringToMap(str string) map[string][]string {
 
 	return result
 }
+
+func PtrTo[T any](t T) *T {
+	return &t
+}
