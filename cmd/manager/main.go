@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/nccloud/watchtower/pkg"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
 	"github.com/nccloud/watchtower/pkg/common"
@@ -17,6 +19,8 @@ import (
 )
 
 func main() {
+	slog.Info("Watchtower starting")
+
 	ctx := context.Background()
 	config := common.NewConfig()
 	kubeConfig := ctrl.GetConfigOrDie()
@@ -31,47 +35,57 @@ func main() {
 		SyncPeriod: &config.SyncPeriod,
 	}))
 
-	manager := pkg.NewManager(cache)
-	watcherInformer := common.MustReturn(cache.GetInformer(ctx, &v1alpha2.Watcher{}))
-
-	common.MustReturn(watcherInformer.AddEventHandler(cache2.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			watcher := obj.(*v1alpha2.Watcher)
-			slog.Info("Watcher added", "name", watcher.Name, "namespace", watcher.Namespace)
-
-			manager.Add(ctx, watcher)
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			oldWatcher := oldObj.(*v1alpha2.Watcher)
-			newWatcher := newObj.(*v1alpha2.Watcher)
-
-			if oldWatcher.GetResourceVersion() != newWatcher.GetResourceVersion() {
-				slog.Info("Watcher updated", "name", newWatcher.Name, "namespace", newWatcher.Namespace)
-
-				manager.Remove(ctx, oldWatcher)
-				manager.Add(ctx, newWatcher)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			watcher := obj.(*v1alpha2.Watcher)
-			slog.Info("Watcher deleted", "name", watcher.Name, "namespace", watcher.Namespace)
-
-			manager.Remove(ctx, obj.(*v1alpha2.Watcher))
+	client := common.MustReturn(client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: cache,
 		},
 	}))
 
+	manager := pkg.NewManager(cache, client)
+
 	go func() {
-		slog.Info("Starting Watchtower")
+		slog.Info("Cache started.")
 		errChan <- cache.Start(ctx)
 	}()
 
-	slog.Info("Waiting for cache to sync...")
+	slog.Info("Waiting for cache sync.")
 
 	if sync := cache.WaitForCacheSync(ctx); !sync {
 		panic("cache sync failed")
 	}
 
-	slog.Info("Cache synced")
+	slog.Info("Cache synced.")
+
+	slog.Info("Watcher informer starting.")
+	common.MustReturn(common.MustReturn(cache.GetInformer(ctx, &v1alpha2.Watcher{})).
+		AddEventHandler(cache2.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				watcher := obj.(*v1alpha2.Watcher)
+				slog.Info("Watcher added", "name", watcher.Name, "namespace", watcher.Namespace)
+
+				manager.Add(ctx, watcher)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				oldWatcher := oldObj.(*v1alpha2.Watcher)
+				newWatcher := newObj.(*v1alpha2.Watcher)
+
+				if oldWatcher.GetResourceVersion() != newWatcher.GetResourceVersion() {
+					slog.Info("Watcher updated", "name", newWatcher.Name, "namespace", newWatcher.Namespace)
+
+					manager.Remove(ctx, oldWatcher)
+					manager.Add(ctx, newWatcher)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				watcher := obj.(*v1alpha2.Watcher)
+				slog.Info("Watcher deleted", "name", watcher.Name, "namespace", watcher.Namespace)
+
+				manager.Remove(ctx, obj.(*v1alpha2.Watcher))
+			},
+		}))
+
+	slog.Info("Watcher informer started")
 
 	if err := <-errChan; err != nil {
 		panic(err)

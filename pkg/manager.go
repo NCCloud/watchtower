@@ -47,22 +47,24 @@ type WorkItem struct {
 
 type watcherManager struct {
 	cache    cache.Cache
+	client   client.Client
 	watchers *xsync.MapOf[string, *WatcherItem]
 }
 
-func NewManager(cache cache.Cache) WatcherManager {
+func NewManager(cache cache.Cache, client client.Client) WatcherManager {
 	return &watcherManager{
 		cache:    cache,
+		client:   client,
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 }
 
 func (m *watcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 	var (
-		logger         = slog.With("watcher", fmt.Sprintf("%s/%s", watcher.Namespace, watcher.Name))
-		watcherID      = string(watcher.GetUID())
-		processor      = NewProcessor(m.cache, watcher)
-		sourceInstance = watcher.Spec.Source.NewInstance()
+		logger            = slog.With("watcher", fmt.Sprintf("%s/%s", watcher.Namespace, watcher.Name))
+		watcherID         = string(watcher.GetUID())
+		processorInstance = NewProcessor(m.cache, m.client, watcher)
+		sourceInstance    = watcher.Spec.Source.NewInstance()
 	)
 
 	sourceInformer, getInformerErr := m.cache.GetInformer(ctx, sourceInstance)
@@ -110,15 +112,20 @@ func (m *watcherManager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 				case <-watcherItem.stopCh:
 					return
 				default:
-					m.consumeItem(ctx, watcherItem, processor, logger)
+					m.consumeItem(ctx, watcherItem, processorInstance, logger)
 				}
 			}
 		}()
 	}
+
+	logger.Info("Watcher added.")
 }
 
 func (m *watcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) {
-	watcherID := string(watcher.GetUID())
+	var (
+		logger    = slog.With("watcher", fmt.Sprintf("%s/%s", watcher.Namespace, watcher.Name))
+		watcherID = string(watcher.GetUID())
+	)
 
 	watcherItem, exists := m.watchers.Load(watcherID)
 	if !exists {
@@ -160,6 +167,8 @@ func (m *watcherManager) Remove(ctx context.Context, watcher *v1alpha2.Watcher) 
 	}
 
 	m.watchers.Delete(watcherID)
+
+	logger.Info("Watcher removed.")
 }
 
 func (m *watcherManager) handleValuesFrom(ctx context.Context, watcher *v1alpha2.Watcher) error {
@@ -232,7 +241,7 @@ func (m *watcherManager) produceItem(watcherItem *WatcherItem, newObj interface{
 
 	logger.Info("Object queued", "apiVersion", newObject.GetAPIVersion(),
 		"kind", newObject.GetKind(), "name", newObject.GetName(), "namespace", newObject.GetNamespace())
-
+	
 	watcherItem.processing.Store(objectID, true)
 	watcherItem.queue.Add(WorkItem{
 		newObject: newObject,

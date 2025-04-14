@@ -2,29 +2,30 @@ package common
 
 import (
 	"errors"
+	"testing"
+	"text/template"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"testing"
-	"text/template"
 
 	mockCache "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
 func TestNewTemplateRenderer(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
 
-	//when
-	renderer := NewTemplateRenderer(mockClient)
+	// when
+	renderer := NewTemplateRenderer(mockClient, nil)
 
-	//then
+	// then
 	assert.NotNil(t, renderer)
 	assert.NotNil(t, renderer.funcMap)
-	assert.Equal(t, mockClient, renderer.kubernetesClient)
+	assert.Equal(t, mockClient, renderer.cache)
 
 	// Check that custom functions are registered
 	assert.NotNil(t, renderer.funcMap["kubernetesGet"])
@@ -34,65 +35,65 @@ func TestNewTemplateRenderer(t *testing.T) {
 }
 
 func TestTemplateRenderer_Parse(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	templateStr := "Hello {{ . }}"
 
-	//when
+	// when
 	tmpl, err := renderer.Parse(templateStr)
 
-	//then
+	// then
 	require.NoError(t, err)
 	assert.NotNil(t, tmpl)
 }
 
 func TestTemplateRenderer_Parse_ErrWhenInvalidTemplate(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	templateStr := "Hello {{ . "
 
-	//when
+	// when
 	_, err := renderer.Parse(templateStr)
 
-	//then
+	// then
 	require.Error(t, err)
 }
 
 func TestTemplateRenderer_Render(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	tmpl, _ := template.New("").Parse("Hello {{ . }}")
 	data := "World"
 
-	//when
+	// when
 	result, err := renderer.Render(tmpl, data)
 
-	//then
+	// then
 	require.NoError(t, err)
 	assert.Equal(t, "Hello World", result)
 }
 
 func TestTemplateRenderer_Render_ErrWhenExecuteFails(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	tmpl, _ := template.New("").Parse("Hello {{ .MissingField }}")
 	data := "World"
 
-	//when
+	// when
 	_, err := renderer.Render(tmpl, data)
 
-	//then
+	// then
 	require.Error(t, err)
 }
 
 func TestTemplateRenderer_KubernetesList(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	apiVersionKind := "v1;ConfigMap"
 	namespace := "default"
 
@@ -138,10 +139,10 @@ func TestTemplateRenderer_KubernetesList(t *testing.T) {
 		}).
 		Return(nil)
 
-	//when
+	// when
 	result, err := renderer.kubernetesList(apiVersionKind, namespace)
 
-	//then
+	// then
 	require.NoError(t, err)
 	items, ok := result.([]unstructured.Unstructured)
 	require.True(t, ok)
@@ -152,9 +153,9 @@ func TestTemplateRenderer_KubernetesList(t *testing.T) {
 }
 
 func TestTemplateRenderer_KubernetesList_ErrWhenListFails(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	apiVersionKind := "v1;ConfigMap"
 	namespace := "default"
 	expectedErr := errors.New("list error")
@@ -162,19 +163,19 @@ func TestTemplateRenderer_KubernetesList_ErrWhenListFails(t *testing.T) {
 	mockClient.On("List", mock.Anything, mock.Anything, mock.Anything).
 		Return(expectedErr)
 
-	//when
+	// when
 	_, err := renderer.kubernetesList(apiVersionKind, namespace)
 
-	//then
+	// then
 	require.Error(t, err)
 	assert.Equal(t, expectedErr, err)
 	mockClient.AssertExpectations(t)
 }
 
 func TestTemplateRenderer_KubernetesGet(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	apiVersionKind := "v1;ConfigMap"
 	namespacedName := "my-cm/default"
 
@@ -208,10 +209,10 @@ func TestTemplateRenderer_KubernetesGet(t *testing.T) {
 		}).
 		Return(nil)
 
-	//when
+	// when
 	result, err := renderer.kubernetesGet(apiVersionKind, namespacedName)
 
-	//then
+	// then
 	require.NoError(t, err)
 	objMap, ok := result.(map[string]interface{})
 	require.True(t, ok)
@@ -223,9 +224,9 @@ func TestTemplateRenderer_KubernetesGet(t *testing.T) {
 }
 
 func TestTemplateRenderer_KubernetesGet_ErrWhenGetFails(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	apiVersionKind := "v1;ConfigMap"
 	namespacedName := "my-cm/default"
 	expectedErr := errors.New("get error")
@@ -233,59 +234,59 @@ func TestTemplateRenderer_KubernetesGet_ErrWhenGetFails(t *testing.T) {
 	mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything).
 		Return(expectedErr)
 
-	//when
+	// when
 	_, err := renderer.kubernetesGet(apiVersionKind, namespacedName)
 
-	//then
+	// then
 	require.Error(t, err)
 	assert.Equal(t, expectedErr, err)
 	mockClient.AssertExpectations(t)
 }
 
 func TestTemplateRenderer_MinioPresignedGetObject_ErrWhenInvalidCredentials(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	endpoint := "https://minio.example.com"
 	credentials := "invalid" // Missing colon separator
 	bucket := "test-bucket"
 	path := "test-path"
 	expiry := "1h"
 
-	//when
+	// when
 	_, err := renderer.minioPresignedGetObject(endpoint, credentials, bucket, path, expiry)
 
-	//then
+	// then
 	require.Error(t, err)
 }
 
 func TestTemplateRenderer_MinioPresignedGetObject_ErrWhenInvalidExpiry(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	endpoint := "https://minio.example.com"
 	credentials := "access:secret"
 	bucket := "test-bucket"
 	path := "test-path"
 	expiry := "invalid" // Invalid duration format
 
-	//when
+	// when
 	_, err := renderer.minioPresignedGetObject(endpoint, credentials, bucket, path, expiry)
 
-	//then
+	// then
 	require.Error(t, err)
 }
 
 func TestTemplateRenderer_NetLookupIP(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 	hostname := "localhost" // Always resolvable
 
-	//when
+	// when
 	ips := renderer.netLookupIP(hostname)
 
-	//then
+	// then
 	assert.NotEmpty(t, ips, "Expected to resolve localhost to at least one IP")
 
 	// Check that at least one of the IPs is a loopback address (127.0.0.1 or ::1)
@@ -301,9 +302,9 @@ func TestTemplateRenderer_NetLookupIP(t *testing.T) {
 
 // Test with template function integration
 func TestTemplateRenderer_TemplateWithKubernetesFunctions(t *testing.T) {
-	//given
+	// given
 	mockClient := new(mockCache.MockCache)
-	renderer := NewTemplateRenderer(mockClient)
+	renderer := NewTemplateRenderer(mockClient, nil)
 
 	configMap := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -337,13 +338,13 @@ func TestTemplateRenderer_TemplateWithKubernetesFunctions(t *testing.T) {
 
 	tmplStr := `{{ with kubernetesGet "v1;ConfigMap" "test-cm/default" }}{{ index . "data" "key" }}{{ end }}`
 
-	//when
+	// when
 	tmpl, err := renderer.Parse(tmplStr)
 	require.NoError(t, err)
 
 	result, err := renderer.Render(tmpl, nil)
 
-	//then
+	// then
 	require.NoError(t, err)
 	assert.Equal(t, "value", result)
 	mockClient.AssertExpectations(t)

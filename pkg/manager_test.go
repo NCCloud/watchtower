@@ -3,6 +3,10 @@ package pkg
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"testing"
+	"time"
+
 	"github.com/nccloud/watchtower/mocks/github.com/nccloud/watchtower/pkg"
 	cache3 "github.com/nccloud/watchtower/mocks/k8s.io/client-go/tools/cache"
 	"github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
@@ -15,26 +19,24 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/util/workqueue"
-	"log/slog"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"testing"
-	"time"
 )
 
 func TestNewManager(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 
-	//when
-	manager := NewManager(mockCache)
+	// when
+	manager := NewManager(mockCache, nil)
 
-	//then
+	// then
 	assert.NotNil(t, manager)
 	assert.IsType(t, &watcherManager{}, manager)
 }
 
 func TestWatcherManager_Add(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -59,10 +61,10 @@ func TestWatcherManager_Add(t *testing.T) {
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 
-	//when
+	// when
 	manager.Add(ctx, watcher)
 
-	//then
+	// then
 	watcherItem, exists := manager.watchers.Load("test-uid")
 	assert.True(t, exists)
 	assert.Equal(t, watcher.Name, watcherItem.watcher.Name)
@@ -72,7 +74,7 @@ func TestWatcherManager_Add(t *testing.T) {
 }
 
 func TestWatcherManager_Add_WithValuesFrom_Secret(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -114,10 +116,10 @@ func TestWatcherManager_Add_WithValuesFrom_Secret(t *testing.T) {
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 
-	//when
+	// when
 	manager.Add(ctx, watcher)
 
-	//then
+	// then
 	watcherItem, exists := manager.watchers.Load("test-uid")
 	assert.True(t, exists)
 	assert.Equal(t, watcher.Name, watcherItem.watcher.Name)
@@ -129,7 +131,7 @@ func TestWatcherManager_Add_WithValuesFrom_Secret(t *testing.T) {
 }
 
 func TestWatcherManager_Add_WithValuesFrom_ConfigMap(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -170,10 +172,10 @@ func TestWatcherManager_Add_WithValuesFrom_ConfigMap(t *testing.T) {
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 
-	//when
+	// when
 	manager.Add(ctx, watcher)
 
-	//then
+	// then
 	watcherItem, exists := manager.watchers.Load("test-uid")
 	assert.True(t, exists)
 	assert.Equal(t, watcher.Name, watcherItem.watcher.Name)
@@ -185,7 +187,7 @@ func TestWatcherManager_Add_WithValuesFrom_ConfigMap(t *testing.T) {
 }
 
 func TestWatcherManager_Add_WithValuesFrom_UnsupportedKind(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -210,17 +212,17 @@ func TestWatcherManager_Add_WithValuesFrom_UnsupportedKind(t *testing.T) {
 		watchers: xsync.NewMapOf[string, *WatcherItem](),
 	}
 
-	//when
+	// when
 	manager.Add(ctx, watcher)
 
-	//then
+	// then
 	_, exists := manager.watchers.Load("test-uid")
 	assert.False(t, exists)
 	mockCache.AssertExpectations(t)
 }
 
 func TestWatcherManager_Remove(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -254,10 +256,10 @@ func TestWatcherManager_Remove(t *testing.T) {
 		watchers: watchers,
 	}
 
-	//when
+	// when
 	manager.Remove(ctx, watcher)
 
-	//then
+	// then
 	_, exists := manager.watchers.Load("test-uid")
 	assert.False(t, exists)
 	mockCache.AssertExpectations(t)
@@ -265,7 +267,7 @@ func TestWatcherManager_Remove(t *testing.T) {
 }
 
 func TestWatcherManager_Remove_WithMultipleWatchers(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher1 := &v1alpha2.Watcher{}
 	watcher1.SetUID("test-uid-1")
@@ -315,10 +317,10 @@ func TestWatcherManager_Remove_WithMultipleWatchers(t *testing.T) {
 		watchers: watchers,
 	}
 
-	//when
+	// when
 	manager.Remove(ctx, watcher1)
 
-	//then
+	// then
 	_, exists1 := manager.watchers.Load("test-uid-1")
 	_, exists2 := manager.watchers.Load("test-uid-2")
 	assert.False(t, exists1)
@@ -328,7 +330,7 @@ func TestWatcherManager_Remove_WithMultipleWatchers(t *testing.T) {
 }
 
 func TestWatcherManager_ProduceItem(t *testing.T) {
-	//given
+	// given
 	logger := slog.With()
 	watcher := &v1alpha2.Watcher{}
 	watcher.SetUID("test-uid")
@@ -347,17 +349,17 @@ func TestWatcherManager_ProduceItem(t *testing.T) {
 
 	manager := &watcherManager{}
 
-	//when
+	// when
 	manager.produceItem(watcherItem, newObj, nil, logger)
 
-	//then
+	// then
 	assert.Equal(t, 1, watcherItem.queue.Len())
 	isProcessing, _ := watcherItem.processing.Load("obj-uid")
 	assert.True(t, isProcessing)
 }
 
 func TestWatcherManager_ConsumeItem_Success(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	logger := slog.With()
 	watcher := &v1alpha2.Watcher{}
@@ -383,10 +385,10 @@ func TestWatcherManager_ConsumeItem_Success(t *testing.T) {
 
 	manager := &watcherManager{}
 
-	//when
+	// when
 	manager.consumeItem(ctx, watcherItem, mockProcessor, logger)
 
-	//then
+	// then
 	assert.Equal(t, 0, watcherItem.queue.Len())
 	_, exists := watcherItem.processing.Load("obj-uid")
 	assert.False(t, exists)
@@ -394,7 +396,7 @@ func TestWatcherManager_ConsumeItem_Success(t *testing.T) {
 }
 
 func TestWatcherManager_ConsumeItem_FilterFail(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	logger := slog.With()
 	watcher := &v1alpha2.Watcher{}
@@ -422,10 +424,10 @@ func TestWatcherManager_ConsumeItem_FilterFail(t *testing.T) {
 
 	manager := &watcherManager{}
 
-	//when
+	// when
 	manager.consumeItem(ctx, watcherItem, mockProcessor, logger)
 
-	//then
+	// then
 	assert.Eventually(t, func() bool {
 		count := watcherItem.queue.Len()
 		_, exists := watcherItem.processing.Load("obj-uid")
@@ -435,7 +437,7 @@ func TestWatcherManager_ConsumeItem_FilterFail(t *testing.T) {
 }
 
 func TestWatcherManager_ConsumeItem_SendFail(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	logger := slog.With()
 	watcher := &v1alpha2.Watcher{}
@@ -464,10 +466,10 @@ func TestWatcherManager_ConsumeItem_SendFail(t *testing.T) {
 
 	manager := &watcherManager{}
 
-	//when
+	// when
 	manager.consumeItem(ctx, watcherItem, mockProcessor, logger)
 
-	//then
+	// then
 	assert.Eventually(t, func() bool {
 		count := watcherItem.queue.Len()
 		_, exists := watcherItem.processing.Load("obj-uid")
@@ -477,7 +479,7 @@ func TestWatcherManager_ConsumeItem_SendFail(t *testing.T) {
 }
 
 func TestWatcherManager_HandleValuesFrom_Secret(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.Namespace = "test-namespace"
@@ -508,10 +510,10 @@ func TestWatcherManager_HandleValuesFrom_Secret(t *testing.T) {
 		cache: mockCache,
 	}
 
-	//when
+	// when
 	err := manager.handleValuesFrom(ctx, watcher)
 
-	//then
+	// then
 	require.NoError(t, err)
 	assert.Equal(t, "v1", watcher.Spec.Source.APIVersion)
 	assert.Equal(t, "Pod", watcher.Spec.Source.Kind)
@@ -519,7 +521,7 @@ func TestWatcherManager_HandleValuesFrom_Secret(t *testing.T) {
 }
 
 func TestWatcherManager_HandleValuesFrom_ConfigMap(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.Namespace = "test-namespace"
@@ -549,10 +551,10 @@ func TestWatcherManager_HandleValuesFrom_ConfigMap(t *testing.T) {
 		cache: mockCache,
 	}
 
-	//when
+	// when
 	err := manager.handleValuesFrom(ctx, watcher)
 
-	//then
+	// then
 	require.NoError(t, err)
 	assert.Equal(t, "v1", watcher.Spec.Source.APIVersion)
 	assert.Equal(t, "Pod", watcher.Spec.Source.Kind)
@@ -560,7 +562,7 @@ func TestWatcherManager_HandleValuesFrom_ConfigMap(t *testing.T) {
 }
 
 func TestWatcherManager_HandleValuesFrom_SecretKeyNotFound(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.Namespace = "test-namespace"
@@ -588,17 +590,17 @@ func TestWatcherManager_HandleValuesFrom_SecretKeyNotFound(t *testing.T) {
 		cache: mockCache,
 	}
 
-	//when
+	// when
 	err := manager.handleValuesFrom(ctx, watcher)
 
-	//then
+	// then
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	mockCache.AssertExpectations(t)
 }
 
 func TestWatcherManager_HandleValuesFrom_ConfigMapKeyNotFound(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.Namespace = "test-namespace"
@@ -625,17 +627,17 @@ func TestWatcherManager_HandleValuesFrom_ConfigMapKeyNotFound(t *testing.T) {
 		cache: mockCache,
 	}
 
-	//when
+	// when
 	err := manager.handleValuesFrom(ctx, watcher)
 
-	//then
+	// then
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	mockCache.AssertExpectations(t)
 }
 
 func TestWatcherManager_HandleValuesFrom_UnsupportedKind(t *testing.T) {
-	//given
+	// given
 	ctx := context.Background()
 	watcher := &v1alpha2.Watcher{}
 	watcher.Spec.ValuesFrom = []v1alpha2.ValuesFrom{
@@ -648,10 +650,10 @@ func TestWatcherManager_HandleValuesFrom_UnsupportedKind(t *testing.T) {
 
 	manager := &watcherManager{}
 
-	//when
+	// when
 	err := manager.handleValuesFrom(ctx, watcher)
 
-	//then
+	// then
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported ValuesFrom kind")
 }

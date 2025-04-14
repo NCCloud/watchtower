@@ -38,11 +38,12 @@ import (
 )
 
 type TemplateRenderer struct {
-	funcMap          template.FuncMap
-	kubernetesClient cache.Cache
+	funcMap template.FuncMap
+	cache   cache.Cache
+	client  client.Client
 }
 
-func NewTemplateRenderer(kubernetesClient cache.Cache) *TemplateRenderer {
+func NewTemplateRenderer(cache cache.Cache, client client.Client) *TemplateRenderer {
 	sproutHandler := sprout.New()
 	if addRegistriesErr := sproutHandler.
 		AddRegistries(checksum.NewRegistry(),
@@ -68,8 +69,9 @@ func NewTemplateRenderer(kubernetesClient cache.Cache) *TemplateRenderer {
 	}
 
 	templateRenderer := &TemplateRenderer{
-		funcMap:          sproutHandler.Build(),
-		kubernetesClient: kubernetesClient,
+		funcMap: sproutHandler.Build(),
+		cache:   cache,
+		client:  client,
 	}
 
 	templateRenderer.funcMap["kubernetesGet"] = templateRenderer.kubernetesGet
@@ -101,7 +103,7 @@ func (t *TemplateRenderer) kubernetesList(apiVersionKind, namespace string) (any
 		},
 	}
 
-	listErr := t.kubernetesClient.List(context.Background(), object, &client.ListOptions{
+	listErr := t.cache.List(context.Background(), object, &client.ListOptions{
 		Namespace: namespace,
 	})
 
@@ -117,7 +119,7 @@ func (t *TemplateRenderer) kubernetesGet(apiVersionKind, namespacedName string) 
 	}
 	namespaceName := stdString.Split(namespacedName, "/")
 
-	getErr := t.kubernetesClient.Get(context.Background(), types.NamespacedName{
+	getErr := t.cache.Get(context.Background(), types.NamespacedName{
 		Name:      namespaceName[0],
 		Namespace: namespaceName[1],
 	}, object)

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	mockHttp "github.com/nccloud/watchtower/mocks/net/http"
 	"io"
 	"net/http"
 	"testing"
+
+	mockHttp "github.com/nccloud/watchtower/mocks/net/http"
 
 	mockCache "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
@@ -18,20 +19,20 @@ import (
 )
 
 func TestNewProcessor(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{}
 
-	//when
-	processor := NewProcessor(mockCache, watcher)
+	// when
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 
-	//then
-	assert.NotNil(t, processor)
-	assert.IsType(t, &watcherProcessor{}, processor)
+	// then
+	assert.NotNil(t, processorInstance)
+	assert.IsType(t, &processor{}, processorInstance)
 }
 
 func TestFilter_EmptyExpression(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{
 		Spec: v1alpha2.WatcherSpec{
@@ -41,20 +42,20 @@ func TestFilter_EmptyExpression(t *testing.T) {
 			},
 		},
 	}
-	processor := NewProcessor(mockCache, watcher)
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 	ctx := context.Background()
 	newObj := &unstructured.Unstructured{}
 
-	//when
-	result, filterErr := processor.Filter(ctx, nil, newObj)
+	// when
+	result, filterErr := processorInstance.Filter(ctx, nil, newObj)
 
-	//then
+	// then
 	assert.True(t, result)
 	assert.NoError(t, filterErr)
 }
 
 func TestFilter_CreateExpression(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{
 		Spec: v1alpha2.WatcherSpec{
@@ -63,21 +64,21 @@ func TestFilter_CreateExpression(t *testing.T) {
 			},
 		},
 	}
-	processor := NewProcessor(mockCache, watcher)
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 	ctx := context.Background()
 	newObj := &unstructured.Unstructured{}
 	newObj.SetName("test")
 
-	//when
-	result, filterErr := processor.Filter(ctx, nil, newObj)
+	// when
+	result, filterErr := processorInstance.Filter(ctx, nil, newObj)
 
-	//then
+	// then
 	assert.True(t, result)
 	assert.NoError(t, filterErr)
 }
 
 func TestFilter_UpdateExpression(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{
 		Spec: v1alpha2.WatcherSpec{
@@ -86,7 +87,7 @@ func TestFilter_UpdateExpression(t *testing.T) {
 			},
 		},
 	}
-	processor := NewProcessor(mockCache, watcher)
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 	ctx := context.Background()
 	oldObj := &unstructured.Unstructured{}
 	oldObj.SetName("old-name")
@@ -96,16 +97,16 @@ func TestFilter_UpdateExpression(t *testing.T) {
 	newObj.SetName("new-name")
 	newObj.SetResourceVersion("2")
 
-	//when
-	result, filterErr := processor.Filter(ctx, oldObj, newObj)
+	// when
+	result, filterErr := processorInstance.Filter(ctx, oldObj, newObj)
 
-	//then
+	// then
 	assert.True(t, result)
 	assert.NoError(t, filterErr)
 }
 
 func TestFilter_InvalidExpression(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{
 		Spec: v1alpha2.WatcherSpec{
@@ -114,20 +115,20 @@ func TestFilter_InvalidExpression(t *testing.T) {
 			},
 		},
 	}
-	processor := NewProcessor(mockCache, watcher)
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 	ctx := context.Background()
 	newObj := &unstructured.Unstructured{}
 
-	//when
-	result, filterErr := processor.Filter(ctx, nil, newObj)
+	// when
+	result, filterErr := processorInstance.Filter(ctx, nil, newObj)
 
-	//then
+	// then
 	assert.False(t, result)
 	assert.Error(t, filterErr)
 }
 
 func TestFilter_NonBooleanResult(t *testing.T) {
-	//given
+	// given
 	mockCache := &mockCache.MockCache{}
 	watcher := &v1alpha2.Watcher{
 		Spec: v1alpha2.WatcherSpec{
@@ -136,21 +137,21 @@ func TestFilter_NonBooleanResult(t *testing.T) {
 			},
 		},
 	}
-	processor := NewProcessor(mockCache, watcher)
+	processorInstance := NewProcessor(mockCache, nil, watcher)
 	ctx := context.Background()
 	newObj := &unstructured.Unstructured{}
 
-	//when
-	result, filterErr := processor.Filter(ctx, nil, newObj)
+	// when
+	result, filterErr := processorInstance.Filter(ctx, nil, newObj)
 
-	//then
+	// then
 	assert.False(t, result)
 	assert.Error(t, filterErr)
 	assert.Contains(t, filterErr.Error(), "result type is not bool")
 }
 
 func TestSend(t *testing.T) {
-	//given
+	// given
 	mockCacheClient := &mockCache.MockCache{}
 	mockRoundTripper := &mockHttp.MockRoundTripper{}
 	mockResponse := &http.Response{
@@ -172,11 +173,11 @@ func TestSend(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-object")
 
-	processor := &watcherProcessor{
-		client:           mockCacheClient,
+	processor := &processor{
+		kubeClient:       nil,
 		watcher:          watcher,
 		httpClient:       &http.Client{Transport: mockRoundTripper},
-		templateRenderer: common.NewTemplateRenderer(mockCacheClient),
+		templateRenderer: common.NewTemplateRenderer(mockCacheClient, nil),
 	}
 
 	mockRoundTripper.On("RoundTrip", mock.Anything).Run(func(args mock.Arguments) {
@@ -191,16 +192,16 @@ func TestSend(t *testing.T) {
 
 	ctx := context.Background()
 
-	//when
+	// when
 	sendErr := processor.Send(ctx, obj)
 
-	//then
+	// then
 	assert.NoError(t, sendErr)
 	mockRoundTripper.AssertExpectations(t)
 }
 
 func TestSend_TemplateError(t *testing.T) {
-	//given
+	// given
 	mockCacheClient := &mockCache.MockCache{}
 	mockRoundTripper := &mockHttp.MockRoundTripper{}
 
@@ -218,25 +219,25 @@ func TestSend_TemplateError(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-object")
 
-	processor := &watcherProcessor{
-		client:           mockCacheClient,
+	processor := &processor{
+		kubeClient:       nil,
 		watcher:          watcher,
 		httpClient:       &http.Client{Transport: mockRoundTripper},
-		templateRenderer: common.NewTemplateRenderer(mockCacheClient),
+		templateRenderer: common.NewTemplateRenderer(mockCacheClient, nil),
 	}
 
 	ctx := context.Background()
 
-	//when
+	// when
 	sendErr := processor.Send(ctx, obj)
 
-	//then
+	// then
 	assert.Error(t, sendErr)
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip", mock.Anything)
 }
 
 func TestSend_HttpError(t *testing.T) {
-	//given
+	// given
 	mockCacheClient := &mockCache.MockCache{}
 	mockRoundTripper := &mockHttp.MockRoundTripper{}
 	httpError := errors.New("http error")
@@ -255,28 +256,28 @@ func TestSend_HttpError(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-object")
 
-	processor := &watcherProcessor{
-		client:           mockCacheClient,
+	processor := &processor{
+		kubeClient:       nil,
 		watcher:          watcher,
 		httpClient:       &http.Client{Transport: mockRoundTripper},
-		templateRenderer: common.NewTemplateRenderer(mockCacheClient),
+		templateRenderer: common.NewTemplateRenderer(mockCacheClient, nil),
 	}
 
 	mockRoundTripper.On("RoundTrip", mock.Anything).Return(nil, httpError)
 
 	ctx := context.Background()
 
-	//when
+	// when
 	sendErr := processor.Send(ctx, obj)
 
-	//then
+	// then
 	assert.Error(t, sendErr)
 	assert.Contains(t, sendErr.Error(), httpError.Error())
 	mockRoundTripper.AssertExpectations(t)
 }
 
 func TestSend_BadStatusCode(t *testing.T) {
-	//given
+	// given
 	mockCacheClient := &mockCache.MockCache{}
 	mockRoundTripper := &mockHttp.MockRoundTripper{}
 	mockResponse := &http.Response{
@@ -298,21 +299,21 @@ func TestSend_BadStatusCode(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-object")
 
-	processor := &watcherProcessor{
-		client:           mockCacheClient,
+	processor := &processor{
+		kubeClient:       nil,
 		watcher:          watcher,
 		httpClient:       &http.Client{Transport: mockRoundTripper},
-		templateRenderer: common.NewTemplateRenderer(mockCacheClient),
+		templateRenderer: common.NewTemplateRenderer(mockCacheClient, nil),
 	}
 
 	mockRoundTripper.On("RoundTrip", mock.Anything).Return(mockResponse, nil)
 
 	ctx := context.Background()
 
-	//when
+	// when
 	sendErr := processor.Send(ctx, obj)
 
-	//then
+	// then
 	assert.Error(t, sendErr)
 	assert.Contains(t, sendErr.Error(), "unexpected status code: 500")
 	mockRoundTripper.AssertExpectations(t)

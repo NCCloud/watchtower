@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
@@ -26,23 +28,23 @@ type WatcherProcessor interface {
 	Send(ctx context.Context, obj *unstructured.Unstructured) error
 }
 
-type watcherProcessor struct {
-	client           cache.Cache
+type processor struct {
+	kubeClient       client.Client
 	watcher          *v1alpha2.Watcher
-	httpClient       *http.Client
 	templateRenderer *common.TemplateRenderer
+	httpClient       *http.Client
 }
 
-func NewProcessor(client cache.Cache, watcher *v1alpha2.Watcher) WatcherProcessor {
-	return &watcherProcessor{
-		client:           client,
-		httpClient:       &http.Client{},
+func NewProcessor(cache cache.Cache, client client.Client, watcher *v1alpha2.Watcher) WatcherProcessor {
+	return &processor{
 		watcher:          watcher,
-		templateRenderer: common.NewTemplateRenderer(client),
+		kubeClient:       client,
+		httpClient:       &http.Client{},
+		templateRenderer: common.NewTemplateRenderer(cache, client),
 	}
 }
 
-func (r *watcherProcessor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstructured) (bool, error) {
+func (r *processor) Filter(_ context.Context, oldObj, newObj *unstructured.Unstructured) (bool, error) {
 	isUpdate := oldObj != nil && oldObj.GetResourceVersion() != newObj.GetResourceVersion()
 
 	expression := r.watcher.Spec.Filter.Create
@@ -100,7 +102,7 @@ func (r *watcherProcessor) Filter(_ context.Context, oldObj, newObj *unstructure
 	return result, nil
 }
 
-func (r *watcherProcessor) Send(ctx context.Context, obj *unstructured.Unstructured) error {
+func (r *processor) Send(ctx context.Context, obj *unstructured.Unstructured) error {
 	headerTemplate, headerTemplateParseErr := r.templateRenderer.Parse(r.watcher.Spec.Destination.HeaderTemplate)
 	if headerTemplateParseErr != nil {
 		return headerTemplateParseErr
@@ -147,6 +149,12 @@ func (r *watcherProcessor) Send(ctx context.Context, obj *unstructured.Unstructu
 
 	if doRequest.StatusCode < 200 || doRequest.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status code: %d", doRequest.StatusCode)
+	}
+
+	if r.watcher.Spec.Source.Hooks.OnSuccess.Delete {
+		if deleteErr := r.kubeClient.Delete(ctx, obj); deleteErr != nil {
+			return deleteErr
+		}
 	}
 
 	return nil

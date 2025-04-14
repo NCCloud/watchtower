@@ -9,22 +9,22 @@ import (
 )
 
 func TestMust_NoError(t *testing.T) {
-	//given
+	// given
 	var err error = nil
 
-	//when
+	// when
 
-	//then
+	// then
 	common.Must(err)
 }
 
 func TestMust_PanicWhenErr(t *testing.T) {
-	//given
+	// given
 	err := errors.New("test error")
 
-	//when
+	// when
 
-	//then
+	// then
 	defer func() {
 		if r := recover(); r == nil {
 			t.Errorf("Must() did not panic with non-nil error")
@@ -35,26 +35,26 @@ func TestMust_PanicWhenErr(t *testing.T) {
 }
 
 func TestMustReturn_NoError(t *testing.T) {
-	//given
+	// given
 	testValue := "test value"
 	var err error = nil
 
-	//when
+	// when
 	result := common.MustReturn(testValue, err)
 
-	//then
+	// then
 	if result != testValue {
 		t.Errorf("MustReturn() = %v, want %v", result, testValue)
 	}
 }
 
 func TestMustReturn_PanicWhenErr(t *testing.T) {
-	//given
+	// given
 	testValue := "test value"
 	err := errors.New("test error")
 
-	//when
-	//then
+	// when
+	// then
 	defer func() {
 		if r := recover(); r == nil {
 			t.Errorf("MustReturn() did not panic with non-nil error")
@@ -65,21 +65,21 @@ func TestMustReturn_PanicWhenErr(t *testing.T) {
 }
 
 func TestIgnoreError(t *testing.T) {
-	//given
+	// given
 	testValue := "test value"
 	err := errors.New("test error")
 
-	//when
+	// when
 	result := common.IgnoreError(testValue, err)
 
-	//then
+	// then
 	if result != testValue {
 		t.Errorf("IgnoreError() = %v, want %v", result, testValue)
 	}
 }
 
 func TestStringToMap(t *testing.T) {
-	//given
+	// given
 	tests := []struct {
 		name     string
 		input    string
@@ -141,10 +141,10 @@ func TestStringToMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			//when
+			// when
 			result := common.StringToMap(tt.input)
 
-			//then
+			// then
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("StringToMap() = %v, want %v", result, tt.expected)
 			}
