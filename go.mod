@@ -3,7 +3,7 @@ module github.com/nccloud/watchtower
 go 1.24.0
 
 require (
-	dario.cat/mergo v1.0.1
+	dario.cat/mergo v1.0.2
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/caarlos0/env/v10 v10.0.0
