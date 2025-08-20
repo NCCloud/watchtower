@@ -1,23 +1,26 @@
-linters:
-  enable-all: true
-  disable:
-    - exhaustruct # Disallows to left unused fields in structs
-    - wrapcheck # Disallows to use non-wrapped errors
-    - gochecknoinits # Disallows to use init functions
-    - ireturn # Disallows to return Interfaces
-    - gci # Disable gci import ordering checker since its buggy
-    - forcetypeassert # Disallows to use type assertions without checking
-    - depguard # Disallows to use non-listed packages
-    - gochecknoglobals # We like global variables
-    - tagalign # Buggy
-    - fatcontext
-linters-settings:
-  gosec:
-    excludes:
-      - 'G601'
-  cyclop:
-    max-complexity: 12
+version: "2"
 run:
-  go: '1.24'
-  timeout: 10m
+  go: "1.25"
   tests: false
+linters:
+  default: all
+  disable:
+    - exhaustruct
+    - wrapcheck
+    - gochecknoinits
+    - ireturn
+    - forcetypeassert
+    - depguard
+    - gochecknoglobals
+    - tagalign
+    - fatcontext
+    - revive
+    - noinlineerr
+  settings:
+    cyclop:
+      max-complexity: 12
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports

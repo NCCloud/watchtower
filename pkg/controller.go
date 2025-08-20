@@ -99,7 +99,10 @@ func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) e
 	if doRequestErr != nil {
 		return doRequestErr
 	}
-	defer doRequest.Body.Close()
+
+	defer func() {
+		_ = doRequest.Body.Close()
+	}()
 
 	if doRequest.StatusCode < 200 || doRequest.StatusCode >= 300 {
 		return fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, doRequest.StatusCode)

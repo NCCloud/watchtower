@@ -427,7 +427,14 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 		bodyMatched := string(body) == "my-value-in-template"
 		return headerMatched && methodMatched && bodyMatched && urlMatched
 	}))
-	mockClient.AssertCalled(t, "Delete", mock.Anything, secret, client.PropagationPolicy("Background"))
+	mockClient.On("Delete", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		println("a")
+	})
+
+	mockClient.AssertCalled(t, "Delete", mock.Anything, secret,
+		mock.MatchedBy(func(opts []client.DeleteOption) bool {
+			return opts[0] == client.PropagationPolicy(metav1.DeletePropagationBackground)
+		}))
 }
 
 func TestController_Reconcile_FilterObjectByName(t *testing.T) {
