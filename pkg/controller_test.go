@@ -427,9 +427,6 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 		bodyMatched := string(body) == "my-value-in-template"
 		return headerMatched && methodMatched && bodyMatched && urlMatched
 	}))
-	mockClient.On("Delete", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-		println("a")
-	})
 
 	mockClient.AssertCalled(t, "Delete", mock.Anything, secret,
 		mock.MatchedBy(func(opts []client.DeleteOption) bool {
