@@ -25,7 +25,8 @@ type Watcher struct {
 type WatcherList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Watcher `json:"items"`
+
+	Items []Watcher `json:"items"`
 }
 
 type WatcherSpec struct {
