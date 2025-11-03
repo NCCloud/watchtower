@@ -6,6 +6,8 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/decls"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -62,4 +64,43 @@ func MustReturn[T any](t T, err error) T {
 	Must(err)
 
 	return t
+}
+
+func EvaluateCelExpressionBool(data map[string]any, criteria string) (bool, error) {
+	if len(strings.TrimSpace(criteria)) == 0 {
+		return true, nil
+	}
+
+	declarations := make([]*decls.VariableDecl, 0, len(data))
+
+	for key := range data {
+		declarations = append(declarations, decls.NewVariable(key, cel.AnyType))
+	}
+
+	env, newEnvErr := cel.NewEnv(cel.VariableDecls(declarations...))
+	if newEnvErr != nil {
+		return false, newEnvErr
+	}
+
+	ast, issues := env.Compile(criteria)
+	if issues != nil && issues.Err() != nil {
+		return false, issues.Err()
+	}
+
+	program, programErr := env.Program(ast)
+	if programErr != nil {
+		return false, programErr
+	}
+
+	output, _, evalErr := program.Eval(data)
+	if evalErr != nil {
+		return false, evalErr
+	}
+
+	outputBool, isOutputBool := output.Value().(bool)
+	if !isOutputBool || !outputBool {
+		return false, nil
+	}
+
+	return true, nil
 }

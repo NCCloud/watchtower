@@ -52,6 +52,18 @@ prepare_envtest() {
   cp -rf "$(setup-envtest use $TESTENV_VERSION -p path)"/* .envtest/bins/
 }
 
+create_devenv() {
+  echo "🚀 Creating KinD cluster..."
+  kind create cluster --image kindest/node:v1.32.3
+
+  install
+}
+
+destroy_devenv() {
+  echo "🧨 Deleting KinD cluster..."
+  kind delete cluster
+}
+
 test() {
   go test -v -coverpkg=./... ./...
 }
