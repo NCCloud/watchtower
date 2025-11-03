@@ -51,8 +51,8 @@ func New(cache cache.Cache, client client.Client, watcher *v1alpha2.Watcher) (Pr
 	return &processor{
 		watcher:          watcher,
 		templateRenderer: common.NewTemplateRenderer(cache, client),
-		destinationHttp:  destinationHttp,
 		destinationType:  destinationType,
+		destinationHttp:  destinationHttp,
 	}, nil
 }
 
@@ -99,30 +99,21 @@ func (p *processor) Filter(_ context.Context, eventType string, data map[string]
 }
 
 func (p *processor) getData(eventType string, oldObj, newObj *unstructured.Unstructured) map[string]any {
-	switch eventType {
-	case "create":
-		return map[string]any{
-			"eventType": eventType,
-			"object":    newObj.Object,
-			"timestamp": time.Now(),
-		}
-	case "update":
-		return map[string]any{
-			"eventType": eventType,
-			"oldObject": oldObj.Object,
-			"newObject": newObj.Object,
-			"object":    newObj.Object,
-			"timestamp": time.Now(),
-		}
-	case "delete":
-		return map[string]any{
-			"eventType": eventType,
-			"object":    newObj.Object,
-			"timestamp": time.Now(),
-		}
+	data := map[string]any{
+		"eventType": eventType,
+		"object":    newObj.Object,
+		"now":       time.Now().Format(time.RFC3339),
 	}
 
-	return nil
+	switch eventType {
+	case "create", "delete":
+		break
+	case "update":
+		data["oldObject"] = oldObj.Object
+		data["newObject"] = newObj.Object
+	}
+
+	return data
 }
 
 func (p *processor) SendHTTP(ctx context.Context, eventType string, data any) error {

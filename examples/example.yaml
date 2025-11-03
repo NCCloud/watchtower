@@ -1,0 +1,20 @@
+apiVersion: cloud.spaceship.com/v1alpha2
+kind: Watcher
+metadata:
+  name: example
+  namespace: default
+spec:
+  source:
+    apiVersion: "apps/v1"
+    kind: "Deployment"
+    concurrency: 5
+    lifecyclePolicies: [ "DeleteOnSuccess" ]
+  filter:
+    create: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
+    update: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
+    delete: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
+  destination:
+    http:
+      urlTemplate: "https://webhook-site.namecheapcloud.wtf/ee70a165-4dbc-4155-908e-2f89625968de"
+      bodyTemplate: "{\"text\": \"{{ .object.metadata.name }}\"}"
+      headerTemplate: "\"Content-Type\": \"application/json\""

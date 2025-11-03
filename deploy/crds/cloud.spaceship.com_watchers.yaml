@@ -88,8 +88,9 @@ spec:
                     description: Kind is the kind of the object like Deployment, Secret,
                       MyCustomResource etc.
                     type: string
-                  policies:
-                    description: Options allows you to set source specific options
+                  lifecyclePolicies:
+                    description: LifecyclePolicies defines the lifecycle policies
+                      to be applied to the source.
                     items:
                       type: string
                     type: array

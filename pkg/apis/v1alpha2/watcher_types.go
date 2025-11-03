@@ -52,8 +52,8 @@ type Source struct {
 	Kind string `json:"kind,omitempty" yaml:"kind"`
 	// Concurrency is how many concurrent workers will be working on processing this source.
 	Concurrency *int `json:"concurrency,omitempty" yaml:"concurrency"`
-	// Options allows you to set source specific options
-	Policies []string `json:"policies,omitempty" yaml:"policies"`
+	// LifecyclePolicies defines the lifecycle policies to be applied to the source.
+	LifecyclePolicies []string `json:"lifecyclePolicies,omitempty" yaml:"lifecyclePolicies"`
 }
 
 func (s *Source) GetConcurrency() int {

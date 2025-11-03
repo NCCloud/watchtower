@@ -77,7 +77,10 @@ func EvaluateCelExpressionBool(data map[string]any, criteria string) (bool, erro
 		declarations = append(declarations, decls.NewVariable(key, cel.AnyType))
 	}
 
-	env, newEnvErr := cel.NewEnv(cel.VariableDecls(declarations...))
+	env, newEnvErr := cel.NewEnv(
+		cel.Macros(cel.StandardMacros...),
+		cel.VariableDecls(declarations...),
+	)
 	if newEnvErr != nil {
 		return false, newEnvErr
 	}

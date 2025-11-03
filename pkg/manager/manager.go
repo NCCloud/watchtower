@@ -115,8 +115,10 @@ func (m *manager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 						return
 					}
 
-					objLogger := m.logger.With("object", "type", string(workqueueItem.eventType),
-						"name", workqueueItem.newObject.GetName(), "namespace", workqueueItem.newObject.GetNamespace())
+					objLogger := m.logger.With("watcher", fmt.Sprintf("%s/%s",
+						watcher.GetName(), watcher.GetNamespace()), "eventType", string(workqueueItem.eventType),
+						"object", fmt.Sprintf("%s/%s", workqueueItem.newObject.GetName(),
+							workqueueItem.newObject.GetNamespace()))
 
 					processErr := processorInstance.Process(ctx,
 						string(workqueueItem.eventType), workqueueItem.oldObject, workqueueItem.newObject)

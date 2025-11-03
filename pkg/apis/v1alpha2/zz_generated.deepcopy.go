@@ -81,8 +81,8 @@ func (in *Source) DeepCopyInto(out *Source) {
 		*out = new(int)
 		**out = **in
 	}
-	if in.Policies != nil {
-		in, out := &in.Policies, &out.Policies
+	if in.LifecyclePolicies != nil {
+		in, out := &in.LifecyclePolicies, &out.LifecyclePolicies
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

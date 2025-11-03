@@ -81,7 +81,7 @@ _Appears in:_
 | `apiVersion` _string_ | APIVersion is api version of the object like apps/v1, v1 etc. |  |  |
 | `kind` _string_ | Kind is the kind of the object like Deployment, Secret, MyCustomResource etc. |  |  |
 | `concurrency` _integer_ | Concurrency is how many concurrent workers will be working on processing this source. |  |  |
-| `policies` _string array_ | Options allows you to set source specific options |  |  |
+| `lifecyclePolicies` _string array_ | LifecyclePolicies defines the lifecycle policies to be applied to the source. |  |  |
 
 
 #### ValuesFrom

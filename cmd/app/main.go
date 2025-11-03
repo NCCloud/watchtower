@@ -75,7 +75,7 @@ func main() {
 			},
 			DeleteFunc: func(obj interface{}) {
 				watcher := obj.(*v1alpha2.Watcher)
-				logger.Info("Watcher deleted..", "name", watcher.Name, "namespace", watcher.Namespace)
+				logger.Info("Watcher deleted.", "name", watcher.Name, "namespace", watcher.Namespace)
 
 				manager.Delete(ctx, obj.(*v1alpha2.Watcher))
 			},
