@@ -8,13 +8,11 @@ spec:
     apiVersion: "apps/v1"
     kind: "Deployment"
     concurrency: 5
-    lifecyclePolicies: [ "DeleteOnSuccess" ]
+    lifecyclePolicies: [ "useFinalizer" ]
   filter:
-    create: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
-    update: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
-    delete: "timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')"
+    create: "(timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')) && object.metadata.name.contains('example')"
   destination:
     http:
-      urlTemplate: "https://webhook-site.namecheapcloud.wtf/ee70a165-4dbc-4155-908e-2f89625968de"
-      bodyTemplate: "{\"text\": \"{{ .object.metadata.name }}\"}"
+      urlTemplate: "https://webhook-site.namecheapcloud.wtf/d429a92c-6590-4dc4-affa-b1293fa79b25"
+      bodyTemplate: "{{ toPrettyJSON .object }}"
       headerTemplate: "\"Content-Type\": \"application/json\""

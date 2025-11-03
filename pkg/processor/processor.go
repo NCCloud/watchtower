@@ -5,34 +5,34 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"text/template"
 	"time"
 
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
 	"github.com/nccloud/watchtower/pkg/common"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func New(cache cache.Cache, client client.Client, watcher *v1alpha2.Watcher) (Processor, error) {
+func New(client client.Client, watcher *v1alpha2.Watcher) (Processor, error) {
 	var (
-		destinationHttp *DestinationHTTP
-		destinationType DestinationType
+		destinationHttp  *DestinationHTTP
+		destinationType  DestinationType
+		templateRenderer = common.NewTemplateRenderer(client)
 	)
 
 	if watcher.Spec.Destination.Http != nil {
-		urlTemplate, parseErr := template.New("").Parse(watcher.Spec.Destination.Http.URLTemplate)
+		urlTemplate, parseErr := templateRenderer.Parse(watcher.Spec.Destination.Http.URLTemplate)
 		if parseErr != nil {
 			return nil, parseErr
 		}
 
-		bodyTemplate, parseErr := template.New("").Parse(watcher.Spec.Destination.Http.BodyTemplate)
+		bodyTemplate, parseErr := templateRenderer.Parse(watcher.Spec.Destination.Http.BodyTemplate)
 		if parseErr != nil {
 			return nil, parseErr
 		}
 
-		headerTemplate, parseErr := template.New("").Parse(watcher.Spec.Destination.Http.HeaderTemplate)
+		headerTemplate, parseErr := templateRenderer.Parse(watcher.Spec.Destination.Http.HeaderTemplate)
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -49,26 +49,46 @@ func New(cache cache.Cache, client client.Client, watcher *v1alpha2.Watcher) (Pr
 	}
 
 	return &processor{
+		client:           client,
 		watcher:          watcher,
-		templateRenderer: common.NewTemplateRenderer(cache, client),
+		templateRenderer: common.NewTemplateRenderer(client),
 		destinationType:  destinationType,
 		destinationHttp:  destinationHttp,
 	}, nil
 }
 
 func (p *processor) Process(ctx context.Context, eventType string, oldObj, newObj *unstructured.Unstructured) error {
-	data := p.getData(eventType, oldObj, newObj)
+	latestObj := &unstructured.Unstructured{}
+	_ = p.client.Get(ctx, client.ObjectKeyFromObject(newObj), latestObj)
+
+	data := map[string]any{
+		"eventType": eventType,
+		"newObject": newObj.Object,
+		"object":    newObj.Object,
+		"now":       time.Now().Format(time.RFC3339),
+	}
+
+	if oldObj != nil {
+		data["oldObject"] = oldObj.Object
+	}
 
 	if passed, filterErr := p.Filter(ctx, eventType, data); filterErr != nil || !passed {
 		return filterErr
 	}
 
-	switch p.destinationType {
-	case DestinationTypeHTTP:
-		return p.SendHTTP(ctx, eventType, data)
-	default:
-		return errors.New("unsupported destination type")
+	if preflightErr := p.PreFlight(ctx, eventType, latestObj); preflightErr != nil {
+		return preflightErr
 	}
+
+	if flightErr := p.Flight(ctx, eventType, data); flightErr != nil {
+		return flightErr
+	}
+
+	if postflightErr := p.PostFlight(ctx, eventType, latestObj); postflightErr != nil {
+		return postflightErr
+	}
+
+	return nil
 }
 
 func (p *processor) Filter(_ context.Context, eventType string, data map[string]any) (bool, error) {
@@ -98,25 +118,48 @@ func (p *processor) Filter(_ context.Context, eventType string, data map[string]
 	return true, nil
 }
 
-func (p *processor) getData(eventType string, oldObj, newObj *unstructured.Unstructured) map[string]any {
-	data := map[string]any{
-		"eventType": eventType,
-		"object":    newObj.Object,
-		"now":       time.Now().Format(time.RFC3339),
+func (p *processor) PreFlight(ctx context.Context, eventType string, latestObj *unstructured.Unstructured) error {
+	if p.watcher.Spec.Source.HasLifecyclePolicy(v1alpha2.LifecyclePolicyUseFinalizer) &&
+		!controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) {
+
+		controllerutil.AddFinalizer(latestObj, v1alpha2.Finalizer)
+
+		if patchErr := p.client.Update(ctx, latestObj); patchErr != nil {
+			return patchErr
+		}
 	}
 
-	switch eventType {
-	case "create", "delete":
-		break
-	case "update":
-		data["oldObject"] = oldObj.Object
-		data["newObject"] = newObj.Object
-	}
-
-	return data
+	return nil
 }
 
-func (p *processor) SendHTTP(ctx context.Context, eventType string, data any) error {
+func (p *processor) Flight(ctx context.Context, eventType string, data any) error {
+	switch p.destinationType {
+	case DestinationTypeHTTP:
+		return p.sendHTTP(ctx, eventType, data)
+	}
+
+	return errors.New("unsupported destination type")
+}
+
+func (p *processor) PostFlight(ctx context.Context, eventType string, latestObj *unstructured.Unstructured) error {
+	if !latestObj.GetDeletionTimestamp().IsZero() && controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) {
+		controllerutil.RemoveFinalizer(latestObj, v1alpha2.Finalizer)
+
+		if patchErr := p.client.Update(ctx, latestObj); client.IgnoreNotFound(patchErr) != nil {
+			return patchErr
+		}
+	}
+
+	if p.watcher.Spec.Source.HasLifecyclePolicy(v1alpha2.LifecyclePolicyDeleteOnSuccess) {
+		if deleteErr := p.client.Delete(ctx, latestObj); client.IgnoreNotFound(deleteErr) != nil {
+			return deleteErr
+		}
+	}
+
+	return nil
+}
+
+func (p *processor) sendHTTP(ctx context.Context, eventType string, data any) error {
 	renderedBody, renderErr := p.templateRenderer.Render(p.destinationHttp.bodyTemplate, data)
 	if renderErr != nil {
 		return renderErr

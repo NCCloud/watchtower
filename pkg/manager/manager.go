@@ -47,7 +47,7 @@ func (m *manager) Add(ctx context.Context, watcher *v1alpha2.Watcher) {
 		sourceInstance = watcher.Spec.Source.NewInstance()
 	)
 
-	processorInstance, processorErr := processor.New(m.cache, m.client, watcher)
+	processorInstance, processorErr := processor.New(m.client, watcher)
 	if processorErr != nil {
 		logger.Error("Failed to add watcher", "error", processorErr)
 

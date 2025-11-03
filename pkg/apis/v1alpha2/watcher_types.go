@@ -5,6 +5,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+const Finalizer = "watcher.spaceship.com/finalizer"
+
 // ValuesFromKind represents the possible sources for injecting values into an instance.
 type ValuesFromKind string
 
@@ -14,6 +16,17 @@ const (
 
 	// ValuesFromKindConfigMap specifies that values should be sourced from a Kubernetes ConfigMap.
 	ValuesFromKindConfigMap ValuesFromKind = "ConfigMap"
+)
+
+// LifecyclePolicy represents the lifecycle policies that can be applied to the source object.
+type LifecyclePolicy string
+
+const (
+	// LifecyclePolicyDeleteOnSuccess specifies that the source object should be deleted upon successful processing.
+	LifecyclePolicyDeleteOnSuccess LifecyclePolicy = "deleteOnSuccess"
+
+	// LifecyclePolicyUseFinalizer specifies that a finalizer should be used to manage the lifecycle of the source object.
+	LifecyclePolicyUseFinalizer LifecyclePolicy = "useFinalizer"
 )
 
 //+kubebuilder:object:root=true
@@ -36,11 +49,11 @@ type WatcherList struct {
 
 type WatcherSpec struct {
 	// Source defines the source objects of the watching process.
-	Source Source `json:"source,omitempty" yaml:"source"`
+	Source *Source `json:"source" yaml:"source"`
 	// Filter helps filter objects during the watching process.
-	Filter Filter `json:"filter,omitempty" yaml:"filter"`
+	Filter *Filter `json:"filter,omitempty" yaml:"filter"`
 	// Destination sets where the rendered objects will be sent.
-	Destination Destination `json:"destination,omitempty" yaml:"destination"`
+	Destination *Destination `json:"destination" yaml:"destination"`
 	// ValuesFrom allows merging variables from references.
 	ValuesFrom []ValuesFrom `json:"valuesFrom,omitempty"`
 }
@@ -53,7 +66,7 @@ type Source struct {
 	// Concurrency is how many concurrent workers will be working on processing this source.
 	Concurrency *int `json:"concurrency,omitempty" yaml:"concurrency"`
 	// LifecyclePolicies defines the lifecycle policies to be applied to the source.
-	LifecyclePolicies []string `json:"lifecyclePolicies,omitempty" yaml:"lifecyclePolicies"`
+	LifecyclePolicies []LifecyclePolicy `json:"lifecyclePolicies,omitempty" yaml:"lifecyclePolicies"`
 }
 
 func (s *Source) GetConcurrency() int {
@@ -62,6 +75,16 @@ func (s *Source) GetConcurrency() int {
 	}
 
 	return 1
+}
+
+func (s *Source) HasLifecyclePolicy(policy LifecyclePolicy) bool {
+	for _, p := range s.LifecyclePolicies {
+		if p == policy {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Source) NewInstance() *unstructured.Unstructured {

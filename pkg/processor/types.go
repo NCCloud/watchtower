@@ -8,6 +8,7 @@ import (
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
 	"github.com/nccloud/watchtower/pkg/common"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type DestinationType string
@@ -34,6 +35,7 @@ type Processor interface {
 }
 
 type processor struct {
+	client           client.Client
 	watcher          *v1alpha2.Watcher
 	templateRenderer *common.TemplateRenderer
 	destinationType  DestinationType

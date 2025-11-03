@@ -65,6 +65,23 @@ _Appears in:_
 | `headerTemplate` _string_ | HeaderTemplate is the template field to set what will be sent the destination. |  |  |
 
 
+#### LifecyclePolicy
+
+_Underlying type:_ _string_
+
+LifecyclePolicy represents the lifecycle policies that can be applied to the source object.
+
+
+
+_Appears in:_
+- [Source](#source)
+
+| Field | Description |
+| --- | --- |
+| `deleteOnSuccess` | LifecyclePolicyDeleteOnSuccess specifies that the source object should be deleted upon successful processing.<br /> |
+| `useFinalizer` | LifecyclePolicyUseFinalizer specifies that a finalizer should be used to manage the lifecycle of the source object.<br /> |
+
+
 #### Source
 
 
@@ -81,7 +98,7 @@ _Appears in:_
 | `apiVersion` _string_ | APIVersion is api version of the object like apps/v1, v1 etc. |  |  |
 | `kind` _string_ | Kind is the kind of the object like Deployment, Secret, MyCustomResource etc. |  |  |
 | `concurrency` _integer_ | Concurrency is how many concurrent workers will be working on processing this source. |  |  |
-| `lifecyclePolicies` _string array_ | LifecyclePolicies defines the lifecycle policies to be applied to the source. |  |  |
+| `lifecyclePolicies` _[LifecyclePolicy](#lifecyclepolicy) array_ | LifecyclePolicies defines the lifecycle policies to be applied to the source. |  |  |
 
 
 #### ValuesFrom

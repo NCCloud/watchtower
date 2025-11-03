@@ -92,6 +92,8 @@ spec:
                     description: LifecyclePolicies defines the lifecycle policies
                       to be applied to the source.
                     items:
+                      description: LifecyclePolicy represents the lifecycle policies
+                        that can be applied to the source object.
                       type: string
                     type: array
                 type: object
@@ -116,6 +118,9 @@ spec:
                   - name
                   type: object
                 type: array
+            required:
+            - destination
+            - source
             type: object
         type: object
     served: true

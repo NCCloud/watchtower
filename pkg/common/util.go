@@ -8,6 +8,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/decls"
+	"github.com/google/cel-go/ext"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -78,6 +79,7 @@ func EvaluateCelExpressionBool(data map[string]any, criteria string) (bool, erro
 	}
 
 	env, newEnvErr := cel.NewEnv(
+		ext.Strings(),
 		cel.Macros(cel.StandardMacros...),
 		cel.VariableDecls(declarations...),
 	)

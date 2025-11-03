@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha2"
 	"github.com/nccloud/watchtower/pkg/common"
 	"github.com/nccloud/watchtower/pkg/manager"
@@ -31,6 +32,7 @@ func main() {
 	kubeConfig := ctrl.GetConfigOrDie()
 	scheme := runtime.NewScheme()
 	errChan := make(chan error)
+	ctrl.SetLogger(logr.Discard())
 
 	common.Must(clientgoscheme.AddToScheme(scheme))
 	common.Must(v1alpha2.AddToScheme(scheme))

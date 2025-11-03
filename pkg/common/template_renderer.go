@@ -10,8 +10,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-
 	"github.com/go-sprout/sprout"
 	"github.com/go-sprout/sprout/registry/checksum"
 	"github.com/go-sprout/sprout/registry/conversion"
@@ -39,11 +37,10 @@ import (
 
 type TemplateRenderer struct {
 	funcMap template.FuncMap
-	cache   cache.Cache
 	client  client.Client
 }
 
-func NewTemplateRenderer(cache cache.Cache, client client.Client) *TemplateRenderer {
+func NewTemplateRenderer(client client.Client) *TemplateRenderer {
 	sproutHandler := sprout.New()
 	if addRegistriesErr := sproutHandler.
 		AddRegistries(checksum.NewRegistry(), checksum.NewRegistry(), conversion.NewRegistry(), crypto.NewRegistry(),
@@ -57,7 +54,6 @@ func NewTemplateRenderer(cache cache.Cache, client client.Client) *TemplateRende
 
 	templateRenderer := &TemplateRenderer{
 		funcMap: sproutHandler.Build(),
-		cache:   cache,
 		client:  client,
 	}
 
@@ -90,7 +86,7 @@ func (t *TemplateRenderer) kubernetesList(apiVersionKind, namespace string) (any
 		},
 	}
 
-	listErr := t.cache.List(context.Background(), object, &client.ListOptions{
+	listErr := t.client.List(context.Background(), object, &client.ListOptions{
 		Namespace: namespace,
 	})
 
@@ -106,7 +102,7 @@ func (t *TemplateRenderer) kubernetesGet(apiVersionKind, namespacedName string) 
 	}
 	namespaceName := stdString.Split(namespacedName, "/")
 
-	getErr := t.cache.Get(context.Background(), types.NamespacedName{
+	getErr := t.client.Get(context.Background(), types.NamespacedName{
 		Name:      namespaceName[0],
 		Namespace: namespaceName[1],
 	}, object)
