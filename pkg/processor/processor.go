@@ -58,40 +58,53 @@ func New(client client.Client, watcher *v1alpha2.Watcher) (Processor, error) {
 }
 
 func (p *processor) Process(ctx context.Context, eventType string, oldObj, newObj *unstructured.Unstructured) error {
-	latestObj := &unstructured.Unstructured{}
-	_ = p.client.Get(ctx, client.ObjectKeyFromObject(newObj), latestObj)
-
-	data := map[string]any{
-		"eventType": eventType,
-		"newObject": newObj.Object,
-		"object":    newObj.Object,
-		"now":       time.Now().Format(time.RFC3339),
+	object := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": newObj.GetAPIVersion(),
+			"kind":       newObj.GetKind(),
+			"metadata": map[string]interface{}{
+				"name":      newObj.GetName(),
+				"namespace": newObj.GetNamespace(),
+			},
+		},
 	}
 
-	if oldObj != nil {
-		data["oldObject"] = oldObj.Object
+	if getErr := p.client.Get(ctx,
+		client.ObjectKeyFromObject(object), object); client.IgnoreNotFound(getErr) != nil {
+		return getErr
 	}
 
-	if passed, filterErr := p.Filter(ctx, eventType, data); filterErr != nil || !passed {
+	if passed, filterErr := p.FilterEvent(ctx, eventType, oldObj, newObj); filterErr != nil || !passed {
 		return filterErr
 	}
 
-	if preflightErr := p.PreFlight(ctx, eventType, latestObj); preflightErr != nil {
+	if preflightErr := p.PreFlight(ctx, object); preflightErr != nil {
 		return preflightErr
 	}
 
-	if flightErr := p.Flight(ctx, eventType, data); flightErr != nil {
+	if flightErr := p.Flight(ctx, eventType, object); flightErr != nil {
 		return flightErr
 	}
 
-	if postflightErr := p.PostFlight(ctx, eventType, latestObj); postflightErr != nil {
+	if postflightErr := p.PostFlight(ctx, object); postflightErr != nil {
 		return postflightErr
 	}
 
 	return nil
 }
 
-func (p *processor) Filter(_ context.Context, eventType string, data map[string]any) (bool, error) {
+func (p *processor) FilterEvent(ctx context.Context, eventType string,
+	oldObject, newObject *unstructured.Unstructured) (bool, error) {
+	data := map[string]any{
+		"newObject": newObject.Object,
+		"object":    newObject.Object,
+		"now":       time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if oldObject != nil {
+		data["oldObject"] = oldObject.Object
+	}
+
 	if p.watcher.Spec.Filter.Create != nil && eventType == "create" {
 		expression, evaluateErr := common.EvaluateCelExpressionBool(data, *p.watcher.Spec.Filter.Create)
 		if evaluateErr != nil {
@@ -118,9 +131,24 @@ func (p *processor) Filter(_ context.Context, eventType string, data map[string]
 	return true, nil
 }
 
-func (p *processor) PreFlight(ctx context.Context, eventType string, latestObj *unstructured.Unstructured) error {
+func (p *processor) Flight(ctx context.Context, eventType string, object *unstructured.Unstructured) error {
+	data := map[string]any{
+		"object": object.Object,
+		"now":    time.Now().UTC().Format(time.RFC3339),
+	}
+
+	switch p.destinationType {
+	case DestinationTypeHTTP:
+		return p.sendHTTP(ctx, eventType, data)
+	}
+
+	return errors.New("unsupported destination type")
+}
+
+func (p *processor) PreFlight(ctx context.Context, latestObj *unstructured.Unstructured) error {
 	if p.watcher.Spec.Source.HasLifecyclePolicy(v1alpha2.LifecyclePolicyUseFinalizer) &&
-		!controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) {
+		!controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) &&
+		latestObj.GetDeletionTimestamp() == nil {
 
 		controllerutil.AddFinalizer(latestObj, v1alpha2.Finalizer)
 
@@ -132,17 +160,8 @@ func (p *processor) PreFlight(ctx context.Context, eventType string, latestObj *
 	return nil
 }
 
-func (p *processor) Flight(ctx context.Context, eventType string, data any) error {
-	switch p.destinationType {
-	case DestinationTypeHTTP:
-		return p.sendHTTP(ctx, eventType, data)
-	}
-
-	return errors.New("unsupported destination type")
-}
-
-func (p *processor) PostFlight(ctx context.Context, eventType string, latestObj *unstructured.Unstructured) error {
-	if !latestObj.GetDeletionTimestamp().IsZero() && controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) {
+func (p *processor) PostFlight(ctx context.Context, latestObj *unstructured.Unstructured) error {
+	if latestObj.GetDeletionTimestamp() != nil && controllerutil.ContainsFinalizer(latestObj, v1alpha2.Finalizer) {
 		controllerutil.RemoveFinalizer(latestObj, v1alpha2.Finalizer)
 
 		if patchErr := p.client.Update(ctx, latestObj); client.IgnoreNotFound(patchErr) != nil {
