@@ -1,7 +1,7 @@
 apiVersion: cloud.spaceship.com/v1alpha2
 kind: Watcher
 metadata:
-  name: example
+  name: example-rewritten
   namespace: default
 spec:
   source:
@@ -10,9 +10,16 @@ spec:
     concurrency: 5
     lifecyclePolicies: [ "useFinalizer" ]
   filter:
-    create: "(timestamp(now) - timestamp(object.metadata.creationTimestamp) < duration('24h')) && object.metadata.name.contains('example')"
+    create: "object.metadata.name.contains('example')"
+    update: "oldObject.metadata.generation != object.metadata.generation"
+    delete: "true"
   destination:
     http:
-      urlTemplate: "https://webhook-site.namecheapcloud.wtf/d429a92c-6590-4dc4-affa-b1293fa79b25"
-      bodyTemplate: "{{ toPrettyJSON .object }}"
+      urlTemplate: "https://webhook-site.namecheapcloud.wtf/52bd8955-d0a5-4ef8-b23b-fc07f0324393"
+      bodyTemplate: |
+        {
+          "name": "{{ .object.metadata.name }}",
+          "namespace": "{{ .object.metadata.namespace }}",
+          "replicas": {{ .object.spec.replicas | default 0 }}
+        }
       headerTemplate: "\"Content-Type\": \"application/json\""

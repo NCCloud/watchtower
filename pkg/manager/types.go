@@ -5,8 +5,6 @@ import (
 
 	"github.com/puzpuzpuz/xsync/v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	cache2 "k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -23,12 +21,6 @@ type WorkqueueItem struct {
 	eventType EventType
 	newObject *unstructured.Unstructured
 	oldObject *unstructured.Unstructured
-}
-
-type Watcher struct {
-	workqueue    workqueue.TypedRateLimitingInterface[WorkqueueItem]
-	registration cache2.ResourceEventHandlerRegistration
-	stopCh       chan bool
 }
 
 type manager struct {

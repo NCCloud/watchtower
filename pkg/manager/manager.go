@@ -25,6 +25,12 @@ const (
 	maxDelay  = 15 * time.Minute
 )
 
+type Watcher struct {
+	workqueue    workqueue.TypedRateLimitingInterface[WorkqueueItem]
+	registration cache2.ResourceEventHandlerRegistration
+	stopCh       chan bool
+}
+
 type Manager interface {
 	Add(ctx context.Context, watcher *v1alpha2.Watcher)
 	Delete(ctx context.Context, watcher *v1alpha2.Watcher)
