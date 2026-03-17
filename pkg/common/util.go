@@ -40,7 +40,7 @@ func MapContains(a, b map[string]string) bool {
 func StringToMap(str string) map[string][]string {
 	result := make(map[string][]string)
 
-	for _, line := range strings.Split(str, "\n") {
+	for line := range strings.SplitSeq(str, "\n") {
 		parts := strings.SplitN(strings.TrimSpace(line), ":", RequiredHeaderPartCount)
 		if len(parts) == RequiredHeaderPartCount {
 			key := strings.TrimSpace(strings.Trim(parts[0], "\" "))
