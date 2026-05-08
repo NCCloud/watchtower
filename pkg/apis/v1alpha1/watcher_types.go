@@ -93,6 +93,18 @@ type UpdateEventFilter struct {
 	// It's useful when you don't want to re-send objects if their resource version is not changed,
 	// like it will happen on full re-synchronization. By default, It's not set.
 	ResourceVersionChanged *bool `json:"resourceVersionChanged,omitempty" yaml:"resourceVersion"`
+	// Status filter if a specific status nested filed changed.
+	Status *StatusUpdateFilter `json:"status,omitempty" yaml:"status"`
+}
+
+type StatusUpdateFilter struct {
+	// NestedFields is the sequence of nested fields to get the last field to evaluate.
+	// E.g., if NestedFields is ["nodeInfo", "kubeletVersion"], update event would be filtered
+	// based on status.nodeInfo.kubeletVersion change.
+	// It's useful when you want to track objects update, but based specific status change,
+	// as changes in object version and generation are triggered by multiple changes,
+	// including changes in metadata and spec
+	NestedFields []string `json:"nestedFields,omitempty" yaml:"nestedFields"`
 }
 
 type ObjectFilter struct {

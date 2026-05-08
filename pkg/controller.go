@@ -138,9 +138,48 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 				return updateEvent.ObjectOld.GetResourceVersion() == updateEvent.ObjectNew.GetResourceVersion()
 			}
 
+			if r.watcher.Spec.Filter.Event.Update.Status != nil {
+				nestedFields := r.watcher.Spec.Filter.Event.Update.Status.NestedFields
+				oldUnstructured, ok := updateEvent.ObjectOld.(*unstructured.Unstructured)
+				if !ok {
+					return false
+				}
+				oldStatus, found, err := unstructured.NestedMap(oldUnstructured.Object, "status")
+				if err != nil || !found {
+					return false
+				}
+				newUnstructured, ok := updateEvent.ObjectNew.(*unstructured.Unstructured)
+				if !ok {
+					return false
+				}
+				newStatus, found, err := unstructured.NestedMap(newUnstructured.Object, "status")
+				if err != nil || !found {
+					return false
+				}
+				oldVal, found, err := unstructured.NestedFieldNoCopy(oldStatus, nestedFields...)
+				if err != nil || !found {
+					return false
+				}
+				newVal, found, err := unstructured.NestedFieldNoCopy(newStatus, nestedFields...)
+				if err != nil || !found {
+					return false
+				}
+				return notEqual(oldVal, newVal) // or use !reflect.DeepEqual(oldVal, newVal)
+			}
+
 			return true
 		},
 	}
+}
+
+// Safe compare if values are not comparable types, like maps and slices
+func notEqual(a, b interface{}) (result bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = false
+		}
+	}()
+	return a != b
 }
 
 func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) {

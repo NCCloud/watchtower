@@ -188,6 +188,22 @@ _Appears in:_
 | `onSuccess` _[OnSuccessSourceOptions](#onsuccesssourceoptions)_ | OnSuccess options will be used when the source is successfully processed. |  |  |
 
 
+#### StatusUpdateFilter
+
+
+
+
+
+
+
+_Appears in:_
+- [UpdateEventFilter](#updateeventfilter)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `nestedFields` _string array_ | NestedFields is the sequence of nested fields to get the last field to evaluate.<br />E.g., if NestedFields is ["nodeInfo", "kubeletVersion"], update event would be filtered<br />based on status.nodeInfo.kubeletVersion change.<br />It's useful when you want to track objects update, but based specific status change,<br />as changes in object version and generation are triggered by multiple changes,<br />including changes in metadata and spec |  |  |
+
+
 #### UpdateEventFilter
 
 
@@ -203,6 +219,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `generationChanged` _boolean_ | GenerationChanged sets if generation should be different or same according to value.<br />It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.<br />By default, It's not set. |  |  |
 | `resourceVersionChanged` _boolean_ | ResourceVersionChanged sets if resource version should be different or same according to value.<br />It's useful when you don't want to re-send objects if their resource version is not changed,<br />like it will happen on full re-synchronization. By default, It's not set. |  |  |
+| `status` _[StatusUpdateFilter](#statusupdatefilter)_ | Status filter if a specific status nested filed changed. |  |  |
 
 
 #### ValuesFrom

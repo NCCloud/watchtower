@@ -15,8 +15,10 @@ spec:
       create:
         creationTimeout: "1h"
       update:
-        generationChanged: true
+        generationChanged: false
         resourceVersionChanged: true
+        status:
+          nestedFields: ["readyReplicas"]
     object:
       name: ".*website.*"
       namespace: "customer-namespace.*"
