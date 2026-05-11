@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -164,22 +165,12 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 				if err != nil || !found {
 					return false
 				}
-				return notEqual(oldVal, newVal) // or use !reflect.DeepEqual(oldVal, newVal)
+				return !reflect.DeepEqual(oldVal, newVal)
 			}
 
 			return true
 		},
 	}
-}
-
-// Safe compare if values are not comparable types, like maps and slices
-func notEqual(a, b interface{}) (result bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			result = false
-		}
-	}()
-	return a != b
 }
 
 func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) {
