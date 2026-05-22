@@ -73,6 +73,12 @@ type EventFilter struct {
 	Create CreateEventFilter `json:"create,omitempty" yaml:"create"`
 	// Update allows you to set update event based filters
 	Update UpdateEventFilter `json:"update,omitempty" yaml:"update"`
+	// Delete opts the Watcher into best-effort delete event forwarding.
+	// When set (even to an empty object), watchtower forwards the last-known
+	// cached body of every deletion to the configured Destination. Delivery
+	// is best-effort: failures are logged and not retried, and events that
+	// occur while watchtower is restarting are lost.
+	Delete *DeleteEventFilter `json:"delete,omitempty" yaml:"delete"`
 }
 
 type CreateEventFilter struct {
@@ -83,6 +89,10 @@ type CreateEventFilter struct {
 		CreationTimeout time.Duration
 	} `json:"-"`
 }
+
+// DeleteEventFilter is currently a marker that enables delete-event forwarding.
+// Reserved for future filter fields (e.g. propagation-policy filters).
+type DeleteEventFilter struct{}
 
 type UpdateEventFilter struct {
 	// GenerationChanged sets if generation should be different or same according to value.

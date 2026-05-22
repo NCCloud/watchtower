@@ -46,6 +46,20 @@ _Appears in:_
 | `result` _string_ | Result is the result that will be used to compare with the result of the Template. |  |  |
 
 
+#### DeleteEventFilter
+
+
+
+DeleteEventFilter is currently a marker that enables delete-event forwarding.
+Reserved for future filter fields (e.g. propagation-policy filters).
+
+
+
+_Appears in:_
+- [EventFilter](#eventfilter)
+
+
+
 #### Destination
 
 
@@ -80,6 +94,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `create` _[CreateEventFilter](#createeventfilter)_ | Create allows you to set create event based filters |  |  |
 | `update` _[UpdateEventFilter](#updateeventfilter)_ | Update allows you to set update event based filters |  |  |
+| `delete` _[DeleteEventFilter](#deleteeventfilter)_ | Delete opts the Watcher into best-effort delete event forwarding.<br />When set (even to an empty object), watchtower forwards the last-known<br />cached body of every deletion to the configured Destination. Delivery<br />is best-effort: failures are logged and not retried, and events that<br />occur while watchtower is restarting are lost. |  |  |
 
 
 #### Filter

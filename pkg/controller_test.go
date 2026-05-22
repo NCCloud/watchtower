@@ -178,7 +178,8 @@ func TestController_Reconcile(t *testing.T) {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
 		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) &&
 			reflect.DeepEqual(r.Header["key2"], []string{"my-value2"}) &&
-			len(r.Header) == 2
+			r.Header.Get(EventHeaderName) == EventTypeUpsert &&
+			len(r.Header) == 3
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"
@@ -421,7 +422,9 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 	assert.False(t, result.Requeue)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
-		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) && len(r.Header) == 1
+		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) &&
+			r.Header.Get(EventHeaderName) == EventTypeUpsert &&
+			len(r.Header) == 2
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"
@@ -885,6 +888,172 @@ func TestController_FilterEvent_UpdateGenerationChangedFalse(t *testing.T) {
 
 	// then
 	assert.False(t, filtered)
+}
+
+func TestController_FilterEvent_DeleteDisabled(t *testing.T) {
+	// given — no Delete filter set ⇒ DeleteFunc must not forward
+	var (
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		watcher          = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com",
+					BodyTemplate: "{{ .metadata.name }}",
+					Method:       "POST",
+				},
+			},
+		}).Compile()
+		obj = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher).FilterEvent()
+	)
+
+	// when
+	requeue := controller.Delete(event.DeleteEvent{Object: obj})
+
+	// then
+	assert.False(t, requeue)
+	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
+}
+
+func TestController_FilterEvent_DeleteEnabled_Forwards(t *testing.T) {
+	// given — Delete filter set ⇒ DeleteFunc must POST the cached body and never enqueue
+	var (
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		watcher          = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Delete: &v1alpha1.DeleteEventFilter{},
+					},
+				},
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com/{{ .metadata.name }}",
+					BodyTemplate: "deleted:{{ .metadata.name }}",
+					Method:       "POST",
+				},
+			},
+		}).Compile()
+		obj = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher).FilterEvent()
+	)
+	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(&http.Response{StatusCode: 200}, nil)
+
+	// when
+	requeue := controller.Delete(event.DeleteEvent{Object: obj})
+
+	// then — predicate always returns false (we never want Reconcile for deletes), but Send must have fired
+	assert.False(t, requeue)
+	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
+		urlMatched := r.URL.String() == "www.test.com/my-secret"
+		body, _ := io.ReadAll(r.Body)
+		bodyMatched := string(body) == "deleted:my-secret"
+		headerMatched := r.Header.Get(EventHeaderName) == EventTypeDelete
+		return urlMatched && bodyMatched && r.Method == "POST" && headerMatched
+	}))
+}
+
+func TestController_FilterEvent_DeleteEnabled_ObjectFilterMismatch(t *testing.T) {
+	// given — Delete filter set but object-name regex doesn't match ⇒ skip
+	var (
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		watcher          = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Delete: &v1alpha1.DeleteEventFilter{},
+					},
+					Object: v1alpha1.ObjectFilter{
+						Name: ptr.To("^never-matches$"),
+					},
+				},
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com",
+					BodyTemplate: "x",
+					Method:       "POST",
+				},
+			},
+		}).Compile()
+		obj = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher).FilterEvent()
+	)
+
+	// when
+	requeue := controller.Delete(event.DeleteEvent{Object: obj})
+
+	// then
+	assert.False(t, requeue)
+	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
+}
+
+func TestController_FilterEvent_DeleteEnabled_SendFailureSwallowed(t *testing.T) {
+	// given — Send returns a transport error; DeleteFunc must log+swallow it (best-effort)
+	var (
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		watcher          = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Delete: &v1alpha1.DeleteEventFilter{},
+					},
+				},
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com",
+					BodyTemplate: "x",
+					Method:       "POST",
+				},
+			},
+		}).Compile()
+		obj = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "my-namespace",
+				},
+			},
+		}
+		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher).FilterEvent()
+	)
+	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(nil, fmt.Errorf("simulated transport failure"))
+
+	// when
+	requeue := controller.Delete(event.DeleteEvent{Object: obj})
+
+	// then — error must not propagate; predicate returns false either way
+	assert.False(t, requeue)
+	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.Anything)
 }
 
 func TestController_SetupWithManager(t *testing.T) {

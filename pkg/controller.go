@@ -24,6 +24,22 @@ import (
 
 var ErrUnexpectedStatusCode = errors.New("unexpected status code")
 
+// deleteEventSendTimeout caps the synchronous send that the DeleteFunc predicate
+// performs. Best-effort: on timeout the event is dropped (no retry, no queue).
+const deleteEventSendTimeout = 30 * time.Second
+
+// EventHeaderName is the HTTP header watchtower sets on every outbound request
+// to signal the source event type to the destination.
+const EventHeaderName = "X-Watchtower-Event"
+
+// EventTypeUpsert is the EventHeaderName value used for the Reconcile path
+// (create, update, and informer re-sync — watchtower does not distinguish
+// these at Reconcile time, so it ships the current state under one label).
+const EventTypeUpsert = "upsert"
+
+// EventTypeDelete is the EventHeaderName value used for delete events.
+const EventTypeDelete = "delete"
+
 type Controller struct {
 	client     client.Client
 	watcher    *v1alpha1.Watcher
@@ -55,7 +71,7 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	logger.Info("Started")
 
-	if sendErr := r.Send(ctx, obj); sendErr != nil {
+	if sendErr := r.Send(ctx, obj, EventTypeUpsert); sendErr != nil {
 		return ctrl.Result{}, sendErr
 	}
 
@@ -71,7 +87,7 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) error {
+func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured, eventType string) error {
 	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
 	if urlErr != nil {
 		return urlErr
@@ -94,6 +110,7 @@ func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) e
 	}
 
 	request.Header = common.StringToMap(string(headers))
+	request.Header.Set(EventHeaderName, eventType)
 
 	doRequest, doRequestErr := r.httpClient.Do(request)
 	if doRequestErr != nil {
@@ -140,6 +157,7 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 
 			return true
 		},
+		DeleteFunc: r.handleDeleteEvent,
 	}
 }
 
@@ -188,4 +206,40 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		For(r.watcher.Spec.Source.NewObject()).
 		Complete(r)
+}
+
+// handleDeleteEvent forwards a delete event to the configured Destination
+// synchronously and always returns false so the event is never enqueued for
+// Reconcile (Reconcile would Get→NotFound→no-op for a deleted object).
+//
+// Best-effort delivery: failures are logged but not retried, and events that
+// occur while watchtower is restarting are lost. Opt in by setting
+// `spec.filter.event.delete` on the Watcher CR.
+func (r *Controller) handleDeleteEvent(deleteEvent event.DeleteEvent) bool {
+	if r.watcher.Spec.Filter.Event.Delete == nil {
+		return false
+	}
+
+	obj, ok := deleteEvent.Object.(*unstructured.Unstructured)
+	if !ok {
+		return false
+	}
+
+	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), deleteEventSendTimeout)
+	defer cancel()
+
+	logger := log.FromContext(ctx).WithValues("watcher", r.watcher.GetName(),
+		"name", obj.GetName(), "namespace", obj.GetNamespace())
+
+	if sendErr := r.Send(ctx, obj, EventTypeDelete); sendErr != nil {
+		logger.Error(sendErr, "delete-event forwarding failed (best-effort, not retried)")
+	} else {
+		logger.Info("delete-event forwarded")
+	}
+
+	return false
 }
