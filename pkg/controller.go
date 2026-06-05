@@ -141,35 +141,44 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 			}
 
 			if len(r.watcher.Spec.Filter.Event.Update.Fields) > 0 {
-				oldUnstructured, ok := updateEvent.ObjectOld.(*unstructured.Unstructured)
-				if !ok {
-					return false
-				}
-				newUnstructured, ok := updateEvent.ObjectNew.(*unstructured.Unstructured)
-				if !ok {
-					return false
-				}
-				for _, field := range r.watcher.Spec.Filter.Event.Update.Fields {
-					path := strings.Split(strings.TrimPrefix(field, "."), ".")
-					oldVal, oldFound, oldErr := unstructured.NestedFieldNoCopy(oldUnstructured.Object, path...)
-					if oldErr != nil {
-						return false
-					}
-					newVal, newFound, newErr := unstructured.NestedFieldNoCopy(newUnstructured.Object, path...)
-					if newErr != nil {
-						return false
-					}
-					if oldFound != newFound || !reflect.DeepEqual(oldVal, newVal) {
-						return true
-					}
-				}
-
-				return false
+				return fieldsChanged(updateEvent, r.watcher.Spec.Filter.Event.Update.Fields)
 			}
 
 			return true
 		},
 	}
+}
+
+func fieldsChanged(updateEvent event.UpdateEvent, fields []string) bool {
+	oldUnstructured, isUnstructured := updateEvent.ObjectOld.(*unstructured.Unstructured)
+	if !isUnstructured {
+		return false
+	}
+
+	newUnstructured, isUnstructured := updateEvent.ObjectNew.(*unstructured.Unstructured)
+	if !isUnstructured {
+		return false
+	}
+
+	for _, field := range fields {
+		path := strings.Split(strings.TrimPrefix(field, "."), ".")
+
+		oldVal, oldFound, oldErr := unstructured.NestedFieldNoCopy(oldUnstructured.Object, path...)
+		if oldErr != nil {
+			return false
+		}
+
+		newVal, newFound, newErr := unstructured.NestedFieldNoCopy(newUnstructured.Object, path...)
+		if newErr != nil {
+			return false
+		}
+
+		if oldFound != newFound || !reflect.DeepEqual(oldVal, newVal) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) {

@@ -158,7 +158,7 @@ type SecretKeySelector struct {
 
 func (s *Source) NewObject() *unstructured.Unstructured {
 	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": s.APIVersion,
 			"kind":       s.Kind,
 		},
