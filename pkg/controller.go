@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -139,33 +140,31 @@ func (r *Controller) FilterEvent() predicate.Funcs {
 				return updateEvent.ObjectOld.GetResourceVersion() == updateEvent.ObjectNew.GetResourceVersion()
 			}
 
-			if r.watcher.Spec.Filter.Event.Update.Status != nil {
-				nestedFields := r.watcher.Spec.Filter.Event.Update.Status.NestedFields
+			if len(r.watcher.Spec.Filter.Event.Update.Fields) > 0 {
 				oldUnstructured, ok := updateEvent.ObjectOld.(*unstructured.Unstructured)
 				if !ok {
-					return false
-				}
-				oldStatus, found, err := unstructured.NestedMap(oldUnstructured.Object, "status")
-				if err != nil || !found {
 					return false
 				}
 				newUnstructured, ok := updateEvent.ObjectNew.(*unstructured.Unstructured)
 				if !ok {
 					return false
 				}
-				newStatus, found, err := unstructured.NestedMap(newUnstructured.Object, "status")
-				if err != nil || !found {
-					return false
+				for _, field := range r.watcher.Spec.Filter.Event.Update.Fields {
+					path := strings.Split(strings.TrimPrefix(field, "."), ".")
+					oldVal, oldFound, oldErr := unstructured.NestedFieldNoCopy(oldUnstructured.Object, path...)
+					if oldErr != nil {
+						return false
+					}
+					newVal, newFound, newErr := unstructured.NestedFieldNoCopy(newUnstructured.Object, path...)
+					if newErr != nil {
+						return false
+					}
+					if oldFound != newFound || !reflect.DeepEqual(oldVal, newVal) {
+						return true
+					}
 				}
-				oldVal, found, err := unstructured.NestedFieldNoCopy(oldStatus, nestedFields...)
-				if err != nil || !found {
-					return false
-				}
-				newVal, found, err := unstructured.NestedFieldNoCopy(newStatus, nestedFields...)
-				if err != nil || !found {
-					return false
-				}
-				return !reflect.DeepEqual(oldVal, newVal)
+
+				return false
 			}
 
 			return true

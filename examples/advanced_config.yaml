@@ -17,8 +17,9 @@ spec:
       update:
         generationChanged: false
         resourceVersionChanged: true
-        status:
-          nestedFields: ["readyReplicas"]
+        fields:
+          - .status.readyReplicas
+          - .spec.replicas
     object:
       name: ".*website.*"
       namespace: "customer-namespace.*"
