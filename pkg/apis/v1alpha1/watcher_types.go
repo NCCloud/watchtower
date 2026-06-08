@@ -93,6 +93,12 @@ type UpdateEventFilter struct {
 	// It's useful when you don't want to re-send objects if their resource version is not changed,
 	// like it will happen on full re-synchronization. By default, It's not set.
 	ResourceVersionChanged *bool `json:"resourceVersionChanged,omitempty" yaml:"resourceVersion"`
+	// Fields is a list of dotted field paths to evaluate for changes between old and new object.
+	// Update event passes the filter when any of the listed fields changed.
+	// Each entry is a path like ".spec.foo"; the leading dot is optional.
+	// It's useful when you want to track only specific field updates, instead of any
+	// generation or resourceVersion change, which can be triggered by unrelated mutations.
+	Fields []string `json:"fields,omitempty" yaml:"fields"`
 }
 
 type ObjectFilter struct {
@@ -152,7 +158,7 @@ type SecretKeySelector struct {
 
 func (s *Source) NewObject() *unstructured.Unstructured {
 	return &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": s.APIVersion,
 			"kind":       s.Kind,
 		},

@@ -887,6 +887,149 @@ func TestController_FilterEvent_UpdateGenerationChangedFalse(t *testing.T) {
 	assert.False(t, filtered)
 }
 
+func TestController_FilterEvent_UpdateFields(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		watcher    = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							Fields: []string{".status.phase", "spec.replicas"},
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+
+		makeObj = func(phase string, replicas int64) *unstructured.Unstructured {
+			return &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"phase":         phase,
+						"readyReplicas": int64(3),
+					},
+					"spec": map[string]interface{}{
+						"replicas": replicas,
+					},
+				},
+			}
+		}
+	)
+
+	// when: a watched field (.status.phase) changes
+	statusPhaseChanged := controller.Update(event.UpdateEvent{
+		ObjectOld: makeObj("Pending", 1),
+		ObjectNew: makeObj("Running", 1),
+	})
+	// when: the other watched field (spec.replicas, leading dot omitted) changes
+	specReplicasChanged := controller.Update(event.UpdateEvent{
+		ObjectOld: makeObj("Running", 1),
+		ObjectNew: makeObj("Running", 2),
+	})
+	// when: only an unwatched field (.status.readyReplicas) changes
+	unwatchedFieldChanged := controller.Update(event.UpdateEvent{
+		ObjectOld: makeObj("Running", 1),
+		ObjectNew: func() *unstructured.Unstructured {
+			obj := makeObj("Running", 1)
+			obj.Object["status"].(map[string]interface{})["readyReplicas"] = int64(5)
+			return obj
+		}(),
+	})
+	// when: nothing changes
+	nothingChanged := controller.Update(event.UpdateEvent{
+		ObjectOld: makeObj("Running", 1),
+		ObjectNew: makeObj("Running", 1),
+	})
+
+	// then
+	assert.True(t, statusPhaseChanged)
+	assert.True(t, specReplicasChanged)
+	assert.False(t, unwatchedFieldChanged)
+	assert.False(t, nothingChanged)
+}
+
+func TestController_FilterEvent_UpdateFieldsAppearsOrDisappears(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		watcher    = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							Fields: []string{".status.phase"},
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+
+		withPhase = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"status": map[string]interface{}{"phase": "Running"},
+			},
+		}
+		withoutPhase = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"status": map[string]interface{}{},
+			},
+		}
+	)
+
+	// when: the watched field appears
+	appeared := controller.Update(event.UpdateEvent{
+		ObjectOld: withoutPhase,
+		ObjectNew: withPhase,
+	})
+	// when: the watched field disappears
+	disappeared := controller.Update(event.UpdateEvent{
+		ObjectOld: withPhase,
+		ObjectNew: withoutPhase,
+	})
+	// when: the watched field is absent on both
+	bothMissing := controller.Update(event.UpdateEvent{
+		ObjectOld: withoutPhase,
+		ObjectNew: withoutPhase,
+	})
+
+	// then
+	assert.True(t, appeared)
+	assert.True(t, disappeared)
+	assert.False(t, bothMissing)
+}
+
+func TestController_FilterEvent_UpdateFieldsRejectsNonUnstructured(t *testing.T) {
+	// given
+	var (
+		mockClient = new(client2.MockClient)
+		watcher    = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Filter: v1alpha1.Filter{
+					Event: v1alpha1.EventFilter{
+						Update: v1alpha1.UpdateEventFilter{
+							Fields: []string{".metadata.name"},
+						},
+					},
+				},
+			},
+		}).Compile()
+		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
+	)
+
+	// when: typed objects (not *unstructured.Unstructured) are passed
+	result := controller.Update(event.UpdateEvent{
+		ObjectOld: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
+		ObjectNew: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
+	})
+
+	// then: the filter rejects the event because it can't introspect typed objects
+	assert.False(t, result)
+}
+
 func TestController_SetupWithManager(t *testing.T) {
 	// given
 	var (
