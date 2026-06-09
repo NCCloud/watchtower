@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: watchers.cloud.spaceship.com
 spec:
   group: cloud.spaceship.com
@@ -44,13 +44,21 @@ spec:
                     description: BodyTemplate is the template field to set what will
                       be sent the destination.
                     type: string
-                  headerTemplate:
-                    description: HeaderTemplate is the template field to set what
-                      will be sent the destination.
-                    type: string
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Headers is a map of header name to a templated value.
+                      Keys are sent verbatim; values are rendered as Go templates against the object.
+                    type: object
                   method:
-                    description: Method is the HTTP method will be used while calling
-                      the destination endpoints.
+                    description: |-
+                      Method is the HTTP method used while calling the destination endpoints.
+                      Defaults to POST when unset.
+                    type: string
+                  timeout:
+                    description: Timeout is the per-request HTTP timeout. Defaults
+                      to 30s when unset.
                     type: string
                   urlTemplate:
                     description: URLTemplate is the template field to set where will
@@ -58,83 +66,26 @@ spec:
                     type: string
                 type: object
               filter:
-                description: Filter helps filter objects during the watching process.
+                description: Filter is a set of CEL predicates, one per event type.
                 properties:
-                  event:
-                    description: Event allows you to set event based filters
-                    properties:
-                      create:
-                        description: Create allows you to set create event based filters
-                        properties:
-                          creationTimeout:
-                            description: |-
-                              CreationTimeout sets what will be the maximum duration can past for the objects in create queue.
-                              It also helps to minimize number of object that will be re-sent when application restarts.
-                            type: string
-                        type: object
-                      update:
-                        description: Update allows you to set update event based filters
-                        properties:
-                          fields:
-                            description: |-
-                              Fields is a list of dotted field paths to evaluate for changes between old and new object.
-                              Update event passes the filter when any of the listed fields changed.
-                              Each entry is a path like ".spec.foo"; the leading dot is optional.
-                              It's useful when you want to track only specific field updates, instead of any
-                              generation or resourceVersion change, which can be triggered by unrelated mutations.
-                            items:
-                              type: string
-                            type: array
-                          generationChanged:
-                            description: |-
-                              GenerationChanged sets if generation should be different or same according to value.
-                              It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.
-                              By default, It's not set.
-                            type: boolean
-                          resourceVersionChanged:
-                            description: |-
-                              ResourceVersionChanged sets if resource version should be different or same according to value.
-                              It's useful when you don't want to re-send objects if their resource version is not changed,
-                              like it will happen on full re-synchronization. By default, It's not set.
-                            type: boolean
-                        type: object
-                    type: object
-                  object:
-                    description: Object allows you to set object based filters
-                    properties:
-                      annotations:
-                        additionalProperties:
-                          type: string
-                        description: Annotations are the labels to filter object by
-                          annotation.
-                        type: object
-                      custom:
-                        description: Custom is the most advanced way of filtering
-                          object by their contents and multiple fields by templating.
-                        properties:
-                          result:
-                            description: Result is the result that will be used to
-                              compare with the result of the Template.
-                            type: string
-                          template:
-                            description: Template is the template that will be used
-                              to compare result with Result and filter accordingly.
-                            type: string
-                        type: object
-                      labels:
-                        additionalProperties:
-                          type: string
-                        description: Labels are the labels to filter object by labels.
-                        type: object
-                      name:
-                        description: Name is the regular expression to filter object
-                          Its name.
-                        type: string
-                      namespace:
-                        description: Namespace is the regular expression to filter
-                          object Its namespace.
-                        type: string
-                    type: object
+                  create:
+                    description: |-
+                      Create is a CEL boolean predicate evaluated on Create events.
+                      Bindings: object (the new object), now (current timestamp).
+                      Omit (empty string) to pass every Create event.
+                    type: string
+                  delete:
+                    description: |-
+                      Delete is a CEL boolean predicate evaluated on Delete events.
+                      Bindings: object (the last-known state of the deleted object), now (current timestamp).
+                      Omit (empty string) to filter out every Delete event (the conservative default).
+                    type: string
+                  update:
+                    description: |-
+                      Update is a CEL boolean predicate evaluated on Update events.
+                      Bindings: object (the new object), oldObject (the previous object), now (current timestamp).
+                      Omit (empty string) to pass every Update event.
+                    type: string
                 type: object
               source:
                 description: Source defines the source objects of the watching process.
@@ -159,8 +110,9 @@ spec:
                           is successfully processed.
                         properties:
                           deleteObject:
-                            description: DeleteObject will delete the object after
-                              it successfully processed.
+                            description: |-
+                              DeleteObject will delete the object after it successfully processed.
+                              Has no effect on Delete events (the object is already gone).
                             type: boolean
                         type: object
                     type: object

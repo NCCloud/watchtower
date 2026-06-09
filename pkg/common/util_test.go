@@ -61,21 +61,3 @@ func TestMustReturn(t *testing.T) {
 	assert.NotPanics(t, willNotPanic)
 }
 
-func TestMapContains(t *testing.T) {
-	// given
-	a := map[string]string{
-		"key": "value",
-	}
-	b := map[string]string{
-		"key":  "value",
-		"key2": "value2",
-	}
-
-	// when
-	contains := MapContains(b, a)
-	notContains := MapContains(a, b)
-
-	// then
-	assert.True(t, contains)
-	assert.False(t, notContains)
-}

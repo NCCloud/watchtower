@@ -1,13 +1,19 @@
 package v1alpha1
 
 import (
-	"regexp"
+	"fmt"
 	"text/template"
 	"time"
 
+	"github.com/google/cel-go/cel"
 	"github.com/nccloud/watchtower/pkg/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+const (
+	DefaultDestinationMethod  = "POST"
+	DefaultDestinationTimeout = 30 * time.Second
 )
 
 //+kubebuilder:object:root=true
@@ -32,7 +38,7 @@ type WatcherList struct {
 type WatcherSpec struct {
 	// Source defines the source objects of the watching process.
 	Source Source `json:"source,omitempty" yaml:"source"`
-	// Filter helps filter objects during the watching process.
+	// Filter is a set of CEL predicates, one per event type.
 	Filter Filter `json:"filter,omitempty" yaml:"filter"`
 	// Destination sets where the rendered objects will be sent.
 	Destination Destination `json:"destination,omitempty" yaml:"destination"`
@@ -58,73 +64,27 @@ type SourceOptions struct {
 
 type OnSuccessSourceOptions struct {
 	// DeleteObject will delete the object after it successfully processed.
+	// Has no effect on Delete events (the object is already gone).
 	DeleteObject bool `json:"deleteObject,omitempty" yaml:"deleteObject"`
 }
 
 type Filter struct {
-	// Event allows you to set event based filters
-	Event EventFilter `json:"event,omitempty" yaml:"event"`
-	// Object allows you to set object based filters
-	Object ObjectFilter `json:"object,omitempty" yaml:"object"`
-}
-
-type EventFilter struct {
-	// Create allows you to set create event based filters
-	Create CreateEventFilter `json:"create,omitempty" yaml:"create"`
-	// Update allows you to set update event based filters
-	Update UpdateEventFilter `json:"update,omitempty" yaml:"update"`
-}
-
-type CreateEventFilter struct {
-	// CreationTimeout sets what will be the maximum duration can past for the objects in create queue.
-	// It also helps to minimize number of object that will be re-sent when application restarts.
-	CreationTimeout *string `json:"creationTimeout,omitempty" yaml:"creationTimeout"`
-	Compiled        struct {
-		CreationTimeout time.Duration
-	} `json:"-"`
-}
-
-type UpdateEventFilter struct {
-	// GenerationChanged sets if generation should be different or same according to value.
-	// It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.
-	// By default, It's not set.
-	GenerationChanged *bool `json:"generationChanged,omitempty" yaml:"generationChanged"`
-	// ResourceVersionChanged sets if resource version should be different or same according to value.
-	// It's useful when you don't want to re-send objects if their resource version is not changed,
-	// like it will happen on full re-synchronization. By default, It's not set.
-	ResourceVersionChanged *bool `json:"resourceVersionChanged,omitempty" yaml:"resourceVersion"`
-	// Fields is a list of dotted field paths to evaluate for changes between old and new object.
-	// Update event passes the filter when any of the listed fields changed.
-	// Each entry is a path like ".spec.foo"; the leading dot is optional.
-	// It's useful when you want to track only specific field updates, instead of any
-	// generation or resourceVersion change, which can be triggered by unrelated mutations.
-	Fields []string `json:"fields,omitempty" yaml:"fields"`
-}
-
-type ObjectFilter struct {
-	// Name is the regular expression to filter object Its name.
-	Name *string `json:"name,omitempty" yaml:"name"`
-	// Namespace is the regular expression to filter object Its namespace.
-	Namespace *string `json:"namespace,omitempty" yaml:"namespace"`
-	// Labels are the labels to filter object by labels.
-	Labels *map[string]string `json:"labels,omitempty" yaml:"labels"`
-	// Annotations are the labels to filter object by annotation.
-	Annotations *map[string]string `json:"annotations,omitempty" yaml:"annotations"`
-	// Custom is the most advanced way of filtering object by their contents and multiple fields by templating.
-	Custom   *CustomObjectFilter `json:"custom,omitempty" yaml:"custom"`
+	// Create is a CEL boolean predicate evaluated on Create events.
+	// Bindings: object (the new object), now (current timestamp).
+	// Omit (empty string) to pass every Create event.
+	Create string `json:"create,omitempty" yaml:"create"`
+	// Update is a CEL boolean predicate evaluated on Update events.
+	// Bindings: object (the new object), oldObject (the previous object), now (current timestamp).
+	// Omit (empty string) to pass every Update event.
+	Update string `json:"update,omitempty" yaml:"update"`
+	// Delete is a CEL boolean predicate evaluated on Delete events.
+	// Bindings: object (the last-known state of the deleted object), now (current timestamp).
+	// Omit (empty string) to filter out every Delete event (the conservative default).
+	Delete   string `json:"delete,omitempty" yaml:"delete"`
 	Compiled struct {
-		Name      *regexp.Regexp
-		Namespace *regexp.Regexp
-	} `json:"-"`
-}
-
-type CustomObjectFilter struct {
-	// Template is the template that will be used to compare result with Result and filter accordingly.
-	Template string `json:"template,omitempty" yaml:"template"`
-	// Result is the result that will be used to compare with the result of the Template.
-	Result   string `json:"result,omitempty" yaml:"result"`
-	Compiled struct {
-		Template *template.Template
+		Create cel.Program
+		Update cel.Program
+		Delete cel.Program
 	} `json:"-"`
 }
 
@@ -133,15 +93,20 @@ type Destination struct {
 	URLTemplate string `json:"urlTemplate,omitempty" yaml:"urlTemplate"`
 	// BodyTemplate is the template field to set what will be sent the destination.
 	BodyTemplate string `json:"bodyTemplate,omitempty" yaml:"bodyTemplate"`
-	// HeaderTemplate is the template field to set what will be sent the destination.
-	HeaderTemplate string `json:"headerTemplate,omitempty" yaml:"headerTemplate"`
-	// Method is the HTTP method will be used while calling the destination endpoints.
+	// Headers is a map of header name to a templated value.
+	// Keys are sent verbatim; values are rendered as Go templates against the object.
+	Headers map[string]string `json:"headers,omitempty" yaml:"headers"`
+	// Method is the HTTP method used while calling the destination endpoints.
+	// Defaults to POST when unset.
 	Method string `json:"method,omitempty" yaml:"method"`
-	// Compiled is the compiled templates.
+	// Timeout is the per-request HTTP timeout. Defaults to 30s when unset.
+	Timeout  *string `json:"timeout,omitempty" yaml:"timeout"`
 	Compiled struct {
-		URLTemplate    *template.Template
-		BodyTemplate   *template.Template
-		HeaderTemplate *template.Template
+		URLTemplate  *template.Template
+		BodyTemplate *template.Template
+		Headers      map[string]*template.Template
+		Method       string
+		Timeout      time.Duration
 	} `json:"-"`
 }
 
@@ -165,45 +130,94 @@ func (s *Source) NewObject() *unstructured.Unstructured {
 	}
 }
 
-func (w *WatcherSpec) GetConcurrency() int {
-	if w.Source.Concurrency != nil {
-		return *w.Source.Concurrency
+func (w *Watcher) Compile() (*Watcher, error) {
+	out := w.DeepCopy()
+
+	create, createErr := compileFilterExpression(out.Spec.Filter.Create, false)
+	if createErr != nil {
+		return nil, fmt.Errorf("compile filter.create: %w", createErr)
 	}
 
-	return 1
+	update, updateErr := compileFilterExpression(out.Spec.Filter.Update, true)
+	if updateErr != nil {
+		return nil, fmt.Errorf("compile filter.update: %w", updateErr)
+	}
+
+	deleteProg, deleteErr := compileFilterExpression(out.Spec.Filter.Delete, false)
+	if deleteErr != nil {
+		return nil, fmt.Errorf("compile filter.delete: %w", deleteErr)
+	}
+
+	out.Spec.Filter.Compiled.Create = create
+	out.Spec.Filter.Compiled.Update = update
+	out.Spec.Filter.Compiled.Delete = deleteProg
+
+	out.Spec.Destination.Compiled.URLTemplate = common.TemplateParse(out.Spec.Destination.URLTemplate)
+	out.Spec.Destination.Compiled.BodyTemplate = common.TemplateParse(out.Spec.Destination.BodyTemplate)
+	out.Spec.Destination.Compiled.Headers = make(map[string]*template.Template,
+		len(out.Spec.Destination.Headers))
+
+	for k, v := range out.Spec.Destination.Headers {
+		out.Spec.Destination.Compiled.Headers[k] = common.TemplateParse(v)
+	}
+
+	out.Spec.Destination.Compiled.Method = out.Spec.Destination.Method
+	if out.Spec.Destination.Compiled.Method == "" {
+		out.Spec.Destination.Compiled.Method = DefaultDestinationMethod
+	}
+
+	out.Spec.Destination.Compiled.Timeout = DefaultDestinationTimeout
+	if out.Spec.Destination.Timeout != nil {
+		timeout, timeoutErr := time.ParseDuration(*out.Spec.Destination.Timeout)
+		if timeoutErr != nil {
+			return nil, fmt.Errorf("parse destination.timeout %q: %w",
+				*out.Spec.Destination.Timeout, timeoutErr)
+		}
+
+		out.Spec.Destination.Compiled.Timeout = timeout
+	}
+
+	return out, nil
 }
 
-func (w *Watcher) Compile() *Watcher {
-	newWatcher := w.DeepCopy()
-
-	if newWatcher.Spec.Filter.Object.Custom != nil {
-		newWatcher.Spec.Filter.Object.Custom.Compiled.Template = common.
-			TemplateParse(newWatcher.Spec.Filter.Object.Custom.Template)
+func (w *Watcher) MustCompile() *Watcher {
+	out, err := w.Compile()
+	if err != nil {
+		panic(err)
 	}
 
-	if newWatcher.Spec.Filter.Object.Name != nil {
-		newWatcher.Spec.Filter.Object.Compiled.Name = regexp.
-			MustCompile(*newWatcher.Spec.Filter.Object.Name)
+	return out
+}
+
+func compileFilterExpression(expression string, withOldObject bool) (cel.Program, error) {
+	if expression == "" {
+		return nil, nil //nolint:nilnil
 	}
 
-	if newWatcher.Spec.Filter.Object.Namespace != nil {
-		newWatcher.Spec.Filter.Object.Compiled.Namespace = regexp.
-			MustCompile(*newWatcher.Spec.Filter.Object.Namespace)
+	vars := []cel.EnvOption{
+		cel.Variable("object", cel.DynType),
+		cel.Variable("now", cel.TimestampType),
+	}
+	if withOldObject {
+		vars = append(vars, cel.Variable("oldObject", cel.DynType))
 	}
 
-	if newWatcher.Spec.Filter.Event.Create.CreationTimeout != nil {
-		newWatcher.Spec.Filter.Event.Create.Compiled.CreationTimeout = common.
-			MustReturn(time.ParseDuration(*newWatcher.Spec.Filter.Event.Create.CreationTimeout))
+	env, envErr := cel.NewEnv(vars...)
+	if envErr != nil {
+		return nil, fmt.Errorf("cel env: %w", envErr)
 	}
 
-	newWatcher.Spec.Destination.Compiled.URLTemplate = common.
-		TemplateParse(newWatcher.Spec.Destination.URLTemplate)
-	newWatcher.Spec.Destination.Compiled.BodyTemplate = common.
-		TemplateParse(newWatcher.Spec.Destination.BodyTemplate)
-	newWatcher.Spec.Destination.Compiled.HeaderTemplate = common.
-		TemplateParse(newWatcher.Spec.Destination.HeaderTemplate)
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("expression %q: %w", expression, issues.Err())
+	}
 
-	return newWatcher
+	program, programErr := env.Program(ast)
+	if programErr != nil {
+		return nil, fmt.Errorf("cel program: %w", programErr)
+	}
+
+	return program, nil
 }
 
 func init() {

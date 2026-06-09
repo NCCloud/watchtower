@@ -11,35 +11,34 @@ spec:
       onSuccess:
         deleteObject: true
   filter:
-    event:
-      create:
-        creationTimeout: "1h"
-      update:
-        generationChanged: false
-        resourceVersionChanged: true
-        fields:
-          - .status.readyReplicas
-          - .spec.replicas
-    object:
-      name: ".*website.*"
-      namespace: "customer-namespace.*"
-      labels:
-        "foo": "bar"
-      annotations:
-        "baz": "qux"
-      custom:
-        template: "{{ if gte .spec.foo 2 }}true{{ end }}"
-        result: "true"
+    # CEL boolean evaluated on Create events.
+    # Bindings: object, now.
+    # First clause is the restart-safety guard (replaces the old creationTimeout).
+    create: |
+      now - timestamp(object.metadata.creationTimestamp) < duration('1h') &&
+      object.metadata.name.matches('.*website.*') &&
+      object.metadata.namespace.matches('customer-namespace.*') &&
+      object.metadata.labels['foo'] == 'bar' &&
+      object.metadata.annotations['baz'] == 'qux'
+    # CEL boolean evaluated on Update events.
+    # Bindings: object, oldObject, now.
+    update: |
+      object.metadata.name.matches('.*website.*') &&
+      object.metadata.namespace.matches('customer-namespace.*') &&
+      object.metadata.labels['foo'] == 'bar' &&
+      (object.status.readyReplicas != oldObject.status.readyReplicas ||
+       object.spec.replicas != oldObject.spec.replicas)
   destination:
     urlTemplate: "http://test.com/{{ .spec.Id }}"
     method: "POST"
+    timeout: "10s"
     bodyTemplate: |
       {
         "text": "{{ .metadata.name }}"
       }
-    headerTemplate: |
-      "Content-Type": "application/json"
-      "app_ctx": "{{ .metadata.labels.app_context }}"
+    headers:
+      Content-Type: "application/json"
+      app_ctx: "{{ .metadata.labels.app_context }}"
   valuesFrom:
     secrets:
       - key: "foo"

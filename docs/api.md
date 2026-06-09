@@ -13,39 +13,6 @@ Package v1alpha1 contains API Schema definitions for the  v1alpha1 API group
 
 
 
-#### CreateEventFilter
-
-
-
-
-
-
-
-_Appears in:_
-- [EventFilter](#eventfilter)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `creationTimeout` _string_ | CreationTimeout sets what will be the maximum duration can past for the objects in create queue.<br />It also helps to minimize number of object that will be re-sent when application restarts. |  |  |
-
-
-#### CustomObjectFilter
-
-
-
-
-
-
-
-_Appears in:_
-- [ObjectFilter](#objectfilter)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `template` _string_ | Template is the template that will be used to compare result with Result and filter accordingly. |  |  |
-| `result` _string_ | Result is the result that will be used to compare with the result of the Template. |  |  |
-
-
 #### Destination
 
 
@@ -61,25 +28,9 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `urlTemplate` _string_ | URLTemplate is the template field to set where will be the destination. |  |  |
 | `bodyTemplate` _string_ | BodyTemplate is the template field to set what will be sent the destination. |  |  |
-| `headerTemplate` _string_ | HeaderTemplate is the template field to set what will be sent the destination. |  |  |
-| `method` _string_ | Method is the HTTP method will be used while calling the destination endpoints. |  |  |
-
-
-#### EventFilter
-
-
-
-
-
-
-
-_Appears in:_
-- [Filter](#filter)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `create` _[CreateEventFilter](#createeventfilter)_ | Create allows you to set create event based filters |  |  |
-| `update` _[UpdateEventFilter](#updateeventfilter)_ | Update allows you to set update event based filters |  |  |
+| `headers` _object (keys:string, values:string)_ | Headers is a map of header name to a templated value.<br />Keys are sent verbatim; values are rendered as Go templates against the object. |  |  |
+| `method` _string_ | Method is the HTTP method used while calling the destination endpoints.<br />Defaults to POST when unset. |  |  |
+| `timeout` _string_ | Timeout is the per-request HTTP timeout. Defaults to 30s when unset. |  |  |
 
 
 #### Filter
@@ -95,28 +46,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `event` _[EventFilter](#eventfilter)_ | Event allows you to set event based filters |  |  |
-| `object` _[ObjectFilter](#objectfilter)_ | Object allows you to set object based filters |  |  |
-
-
-#### ObjectFilter
-
-
-
-
-
-
-
-_Appears in:_
-- [Filter](#filter)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `name` _string_ | Name is the regular expression to filter object Its name. |  |  |
-| `namespace` _string_ | Namespace is the regular expression to filter object Its namespace. |  |  |
-| `labels` _map[string]string_ | Labels are the labels to filter object by labels. |  |  |
-| `annotations` _map[string]string_ | Annotations are the labels to filter object by annotation. |  |  |
-| `custom` _[CustomObjectFilter](#customobjectfilter)_ | Custom is the most advanced way of filtering object by their contents and multiple fields by templating. |  |  |
+| `create` _string_ | Create is a CEL boolean predicate evaluated on Create events.<br />Bindings: object (the new object), now (current timestamp).<br />Omit (empty string) to pass every Create event. |  |  |
+| `update` _string_ | Update is a CEL boolean predicate evaluated on Update events.<br />Bindings: object (the new object), oldObject (the previous object), now (current timestamp).<br />Omit (empty string) to pass every Update event. |  |  |
+| `delete` _string_ | Delete is a CEL boolean predicate evaluated on Delete events.<br />Bindings: object (the last-known state of the deleted object), now (current timestamp).<br />Omit (empty string) to filter out every Delete event (the conservative default). |  |  |
 
 
 #### OnSuccessSourceOptions
@@ -132,7 +64,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `deleteObject` _boolean_ | DeleteObject will delete the object after it successfully processed. |  |  |
+| `deleteObject` _boolean_ | DeleteObject will delete the object after it successfully processed.<br />Has no effect on Delete events (the object is already gone). |  |  |
 
 
 #### SecretKeySelector
@@ -188,24 +120,6 @@ _Appears in:_
 | `onSuccess` _[OnSuccessSourceOptions](#onsuccesssourceoptions)_ | OnSuccess options will be used when the source is successfully processed. |  |  |
 
 
-#### UpdateEventFilter
-
-
-
-
-
-
-
-_Appears in:_
-- [EventFilter](#eventfilter)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `generationChanged` _boolean_ | GenerationChanged sets if generation should be different or same according to value.<br />It's useful when you want/don't want to send objects when their sub-resources are updated, like status updates.<br />By default, It's not set. |  |  |
-| `resourceVersionChanged` _boolean_ | ResourceVersionChanged sets if resource version should be different or same according to value.<br />It's useful when you don't want to re-send objects if their resource version is not changed,<br />like it will happen on full re-synchronization. By default, It's not set. |  |  |
-| `fields` _string array_ | Fields is a list of dotted field paths to evaluate for changes between old and new object.<br />Update event passes the filter when any of the listed fields changed.<br />Each entry is a path like ".spec.foo"; the leading dot is optional.<br />It's useful when you want to track only specific field updates, instead of any<br />generation or resourceVersion change, which can be triggered by unrelated mutations. |  |  |
-
-
 #### ValuesFrom
 
 
@@ -254,7 +168,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `source` _[Source](#source)_ | Source defines the source objects of the watching process. |  |  |
-| `filter` _[Filter](#filter)_ | Filter helps filter objects during the watching process. |  |  |
+| `filter` _[Filter](#filter)_ | Filter is a set of CEL predicates, one per event type. |  |  |
 | `destination` _[Destination](#destination)_ | Destination sets where the rendered objects will be sent. |  |  |
 | `valuesFrom` _[ValuesFrom](#valuesfrom)_ | ValuesFrom allows merging variables from references. |  |  |
 

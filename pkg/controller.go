@@ -6,22 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
-	"strings"
+	"sync"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	"sigs.k8s.io/controller-runtime/pkg/event"
-
-	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
-	"github.com/nccloud/watchtower/pkg/common"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
+	"github.com/nccloud/watchtower/pkg/common"
 )
 
 var ErrUnexpectedStatusCode = errors.New("unexpected status code")
@@ -30,6 +30,7 @@ type Controller struct {
 	client     client.Client
 	watcher    *v1alpha1.Watcher
 	httpClient *http.Client
+	deleted    sync.Map
 }
 
 func NewController(client client.Client, httpClient *http.Client, watcher *v1alpha1.Watcher) *Controller {
@@ -41,29 +42,80 @@ func NewController(client client.Client, httpClient *http.Client, watcher *v1alp
 }
 
 func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var (
-		start  = time.Now()
-		logger = log.FromContext(ctx)
-		obj    = r.watcher.Spec.Source.NewObject()
-	)
+	start := time.Now()
+	logger := log.FromContext(ctx)
 
-	if getErr := r.client.Get(ctx, req.NamespacedName, obj); getErr != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(getErr)
-	}
+	obj := r.watcher.Spec.Source.NewObject()
+	getErr := r.client.Get(ctx, req.NamespacedName, obj)
+	isDelete := false
 
-	if filtered, filterErr := r.FilterObject(obj); filterErr != nil || filtered {
-		return ctrl.Result{}, filterErr
+	switch {
+	case getErr == nil:
+		r.deleted.Delete(req.NamespacedName)
+	case apierrors.IsNotFound(getErr):
+		cached, ok := r.deleted.Load(req.NamespacedName)
+		if !ok {
+			return ctrl.Result{}, nil
+		}
+
+		obj = cached.(*unstructured.Unstructured)
+		isDelete = true
+	default:
+		return ctrl.Result{}, getErr
 	}
 
 	logger.Info("Started")
 
-	if sendErr := r.Send(ctx, obj); sendErr != nil {
-		return ctrl.Result{}, sendErr
+	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
+	if urlErr != nil {
+		return ctrl.Result{}, urlErr
 	}
 
-	if r.watcher.Spec.Source.Options.OnSuccess.DeleteObject {
-		deleteErr := r.client.Delete(ctx, obj, client.PropagationPolicy("Background"))
-		if client.IgnoreNotFound(deleteErr) != nil {
+	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.BodyTemplate, obj)
+	if bodyErr != nil {
+		return ctrl.Result{}, bodyErr
+	}
+
+	headers := make(http.Header, len(r.watcher.Spec.Destination.Compiled.Headers))
+
+	for name, tmpl := range r.watcher.Spec.Destination.Compiled.Headers {
+		rendered, renderErr := common.TemplateExecuteForObject(tmpl, obj)
+		if renderErr != nil {
+			return ctrl.Result{}, renderErr
+		}
+
+		headers.Add(name, string(rendered))
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, r.watcher.Spec.Destination.Compiled.Timeout)
+	defer cancel()
+
+	request, requestErr := http.NewRequestWithContext(reqCtx, r.watcher.Spec.Destination.Compiled.Method,
+		string(url), bytes.NewReader(body))
+	if requestErr != nil {
+		return ctrl.Result{}, requestErr
+	}
+
+	request.Header = headers
+
+	response, doErr := r.httpClient.Do(request)
+	if doErr != nil {
+		return ctrl.Result{}, doErr
+	}
+
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return ctrl.Result{}, fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, response.StatusCode)
+	}
+
+	switch {
+	case isDelete:
+		r.deleted.Delete(req.NamespacedName)
+	case r.watcher.Spec.Source.Options.OnSuccess.DeleteObject:
+		if deleteErr := r.client.Delete(ctx, obj, client.PropagationPolicy("Background")); client.IgnoreNotFound(deleteErr) != nil {
 			return ctrl.Result{}, deleteErr
 		}
 	}
@@ -73,156 +125,87 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Controller) Send(ctx context.Context, obj *unstructured.Unstructured) error {
-	url, urlErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.URLTemplate, obj)
-	if urlErr != nil {
-		return urlErr
-	}
-
-	body, bodyErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.BodyTemplate, obj)
-	if bodyErr != nil {
-		return bodyErr
-	}
-
-	headers, headersErr := common.TemplateExecuteForObject(r.watcher.Spec.Destination.Compiled.HeaderTemplate, obj)
-	if headersErr != nil {
-		return headersErr
-	}
-
-	request, requestErr := http.NewRequestWithContext(ctx, r.watcher.Spec.Destination.Method,
-		string(url), bytes.NewReader(body))
-	if requestErr != nil {
-		return requestErr
-	}
-
-	request.Header = common.StringToMap(string(headers))
-
-	doRequest, doRequestErr := r.httpClient.Do(request)
-	if doRequestErr != nil {
-		return doRequestErr
-	}
-
-	defer func() {
-		_ = doRequest.Body.Close()
-	}()
-
-	if doRequest.StatusCode < 200 || doRequest.StatusCode >= 300 {
-		return fmt.Errorf("%w: %d", ErrUnexpectedStatusCode, doRequest.StatusCode)
-	}
-
-	return nil
-}
-
 func (r *Controller) FilterEvent() predicate.Funcs {
+	logger := log.Log.WithName("filter").WithValues("watcher", r.watcher.Name)
+
 	return predicate.Funcs{
-		CreateFunc: func(event event.CreateEvent) bool {
-			if r.watcher.Spec.Filter.Event.Create.CreationTimeout != nil {
-				return event.Object.GetCreationTimestamp().
-					Add(r.watcher.Spec.Filter.Event.Create.Compiled.CreationTimeout).After(time.Now())
+		CreateFunc: func(e event.CreateEvent) bool {
+			program := r.watcher.Spec.Filter.Compiled.Create
+			if program == nil {
+				return true
 			}
+
+			obj, ok := e.Object.(*unstructured.Unstructured)
+			if !ok {
+				return false
+			}
+
+			return common.EvalCELPredicate(logger, program, map[string]any{
+				"object": obj.Object,
+				"now":    time.Now(),
+			})
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			program := r.watcher.Spec.Filter.Compiled.Update
+			if program == nil {
+				return true
+			}
+
+			oldObj, ok := e.ObjectOld.(*unstructured.Unstructured)
+			if !ok {
+				return false
+			}
+
+			newObj, ok := e.ObjectNew.(*unstructured.Unstructured)
+			if !ok {
+				return false
+			}
+
+			return common.EvalCELPredicate(logger, program, map[string]any{
+				"object":    newObj.Object,
+				"oldObject": oldObj.Object,
+				"now":       time.Now(),
+			})
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			program := r.watcher.Spec.Filter.Compiled.Delete
+			if program == nil {
+				return false
+			}
+
+			obj, ok := e.Object.(*unstructured.Unstructured)
+			if !ok {
+				return false
+			}
+
+			if !common.EvalCELPredicate(logger, program, map[string]any{
+				"object": obj.Object,
+				"now":    time.Now(),
+			}) {
+				return false
+			}
+
+			r.deleted.Store(types.NamespacedName{
+				Name:      obj.GetName(),
+				Namespace: obj.GetNamespace(),
+			}, obj.DeepCopy())
 
 			return true
 		},
-		UpdateFunc: func(updateEvent event.UpdateEvent) bool {
-			if r.watcher.Spec.Filter.Event.Update.GenerationChanged != nil {
-				if *r.watcher.Spec.Filter.Event.Update.GenerationChanged {
-					return updateEvent.ObjectOld.GetGeneration() != updateEvent.ObjectNew.GetGeneration()
-				}
-
-				return updateEvent.ObjectOld.GetGeneration() == updateEvent.ObjectNew.GetGeneration()
-			}
-
-			if r.watcher.Spec.Filter.Event.Update.ResourceVersionChanged != nil {
-				if *r.watcher.Spec.Filter.Event.Update.ResourceVersionChanged {
-					return updateEvent.ObjectOld.GetResourceVersion() != updateEvent.ObjectNew.GetResourceVersion()
-				}
-
-				return updateEvent.ObjectOld.GetResourceVersion() == updateEvent.ObjectNew.GetResourceVersion()
-			}
-
-			if len(r.watcher.Spec.Filter.Event.Update.Fields) > 0 {
-				return fieldsChanged(updateEvent, r.watcher.Spec.Filter.Event.Update.Fields)
-			}
-
-			return true
-		},
 	}
-}
-
-func fieldsChanged(updateEvent event.UpdateEvent, fields []string) bool {
-	oldUnstructured, isUnstructured := updateEvent.ObjectOld.(*unstructured.Unstructured)
-	if !isUnstructured {
-		return false
-	}
-
-	newUnstructured, isUnstructured := updateEvent.ObjectNew.(*unstructured.Unstructured)
-	if !isUnstructured {
-		return false
-	}
-
-	for _, field := range fields {
-		path := strings.Split(strings.TrimPrefix(field, "."), ".")
-
-		oldVal, oldFound, oldErr := unstructured.NestedFieldNoCopy(oldUnstructured.Object, path...)
-		if oldErr != nil {
-			return false
-		}
-
-		newVal, newFound, newErr := unstructured.NestedFieldNoCopy(newUnstructured.Object, path...)
-		if newErr != nil {
-			return false
-		}
-
-		if oldFound != newFound || !reflect.DeepEqual(oldVal, newVal) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (r *Controller) FilterObject(obj *unstructured.Unstructured) (bool, error) {
-	if r.watcher.Spec.Filter.Object.Name != nil &&
-		!r.watcher.Spec.Filter.Object.Compiled.Name.MatchString(obj.GetName()) {
-		return true, nil
-	}
-
-	if r.watcher.Spec.Filter.Object.Namespace != nil &&
-		!r.watcher.Spec.Filter.Object.Compiled.Namespace.MatchString(obj.GetNamespace()) {
-		return true, nil
-	}
-
-	if r.watcher.Spec.Filter.Object.Labels != nil &&
-		!common.MapContains(obj.GetLabels(), *r.watcher.Spec.Filter.Object.Labels) {
-		return true, nil
-	}
-
-	if r.watcher.Spec.Filter.Object.Annotations != nil &&
-		!common.MapContains(obj.GetAnnotations(), *r.watcher.Spec.Filter.Object.Annotations) {
-		return true, nil
-	}
-
-	if r.watcher.Spec.Filter.Object.Custom != nil {
-		result, executeErr := common.TemplateExecuteForObject(
-			r.watcher.Spec.Filter.Object.Custom.Compiled.Template, obj)
-		if executeErr != nil {
-			return true, executeErr
-		}
-
-		if string(result) != r.watcher.Spec.Filter.Object.Custom.Result {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
 
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
+	concurrency := 1
+	if r.watcher.Spec.Source.Concurrency != nil {
+		concurrency = *r.watcher.Spec.Source.Concurrency
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(r.watcher.GetName()).
 		WithEventFilter(r.FilterEvent()).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
+			MaxConcurrentReconciles: concurrency,
 		}).
 		For(r.watcher.Spec.Source.NewObject()).
 		Complete(r)

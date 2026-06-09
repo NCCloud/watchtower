@@ -2,15 +2,12 @@ package common
 
 import (
 	"bytes"
-	"strings"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
+	"github.com/go-logr/logr"
+	"github.com/google/cel-go/cel"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-)
-
-const (
-	RequiredHeaderPartCount = 2
 )
 
 func TemplateParse(str string) *template.Template {
@@ -26,30 +23,17 @@ func TemplateExecuteForObject(template *template.Template, obj *unstructured.Uns
 	return buffer.Bytes(), nil
 }
 
-func MapContains(a, b map[string]string) bool {
-	for key, val := range b {
-		valA, contains := a[key]
-		if !contains || valA != val {
-			return false
-		}
+func EvalCELPredicate(logger logr.Logger, program cel.Program, vars map[string]any) bool {
+	out, _, evalErr := program.Eval(vars)
+	if evalErr != nil {
+		logger.V(1).Info("CEL eval failed", "err", evalErr.Error())
+
+		return false
 	}
 
-	return true
-}
+	result, ok := out.Value().(bool)
 
-func StringToMap(str string) map[string][]string {
-	result := make(map[string][]string)
-
-	for line := range strings.SplitSeq(str, "\n") {
-		parts := strings.SplitN(strings.TrimSpace(line), ":", RequiredHeaderPartCount)
-		if len(parts) == RequiredHeaderPartCount {
-			key := strings.TrimSpace(strings.Trim(parts[0], "\" "))
-			value := strings.TrimSpace(strings.Trim(parts[1], "\" "))
-			result[key] = append(result[key], value)
-		}
-	}
-
-	return result
+	return ok && result
 }
 
 func Must(e error) {

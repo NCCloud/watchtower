@@ -17,25 +17,20 @@ import (
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	http2 "github.com/nccloud/watchtower/mocks/net/http"
-	cache2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
-	client2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/client"
-	"github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/manager"
-	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
@@ -43,6 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	http2 "github.com/nccloud/watchtower/mocks/net/http"
+	cache2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/cache"
+	client2 "github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/nccloud/watchtower/mocks/sigs.k8s.io/controller-runtime/pkg/manager"
+	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 )
 
 var testVars = struct {
@@ -88,7 +89,7 @@ func init() {
 func TestController_New(t *testing.T) {
 	// given
 	var (
-		watcher          = (&v1alpha1.Watcher{}).Compile()
+		watcher          = (&v1alpha1.Watcher{}).MustCompile()
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 	)
@@ -107,31 +108,17 @@ func TestController_Reconcile(t *testing.T) {
 		ctx     = context.Background()
 		watcher = (&v1alpha1.Watcher{
 			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Name:      ptr.To(".*my.*"),
-						Namespace: ptr.To(".*my.*"),
-						Labels: ptr.To(map[string]string{
-							"my-label": "true",
-						}),
-						Annotations: ptr.To(map[string]string{
-							"my-annotation": "true",
-						}),
-						Custom: &v1alpha1.CustomObjectFilter{
-							Template: "{{ index .data \"my-key\" }}",
-							Result:   "my-value",
-						},
-					},
-				},
 				Destination: v1alpha1.Destination{
 					URLTemplate:  "www.test.com/{{ index .data \"my-key\" }}-in-url",
 					BodyTemplate: "{{ index .data \"my-key\" }}-in-template",
 					Method:       "POST",
-					HeaderTemplate: `key: {{ index .data "my-key" }}
-									key2: {{ index .data "my-key2" }}`,
+					Headers: map[string]string{
+						"key":  "{{ index .data \"my-key\" }}",
+						"key2": "{{ index .data \"my-key2\" }}",
+					},
 				},
 			},
-		}).Compile()
+		}).MustCompile()
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		secret           = &unstructured.Unstructured{
@@ -142,12 +129,6 @@ func TestController_Reconcile(t *testing.T) {
 				"metadata": map[string]interface{}{
 					"name":      "my-secret",
 					"namespace": "my-namespace",
-					"labels": map[string]interface{}{
-						"my-label": "true",
-					},
-					"annotations": map[string]interface{}{
-						"my-annotation": "true",
-					},
 				},
 				"data": map[string]interface{}{
 					"my-key":  "my-value",
@@ -176,14 +157,50 @@ func TestController_Reconcile(t *testing.T) {
 	assert.False(t, result.Requeue)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
-		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) &&
-			reflect.DeepEqual(r.Header["key2"], []string{"my-value2"}) &&
+		headerMatched := reflect.DeepEqual(r.Header["Key"], []string{"my-value"}) &&
+			reflect.DeepEqual(r.Header["Key2"], []string{"my-value2"}) &&
 			len(r.Header) == 2
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"
 		return headerMatched && methodMatched && bodyMatched && urlMatched
 	}))
+}
+
+func TestController_Reconcile_DefaultsMethodAndTimeout(t *testing.T) {
+	// given
+	var (
+		ctx     = context.Background()
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com/x",
+					BodyTemplate: "body",
+					// Method and Timeout intentionally omitted
+				},
+			},
+		}).MustCompile()
+	)
+
+	// then defaults are applied
+	assert.Equal(t, v1alpha1.DefaultDestinationMethod, watcher.Spec.Destination.Compiled.Method)
+	assert.Equal(t, v1alpha1.DefaultDestinationTimeout, watcher.Spec.Destination.Compiled.Timeout)
+	_ = ctx
+}
+
+func TestController_Reconcile_CustomTimeoutParsed(t *testing.T) {
+	// given
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Destination: v1alpha1.Destination{
+				URLTemplate: "www.test.com/x", BodyTemplate: "b",
+				Timeout: ptr.To("5s"),
+			},
+		},
+	}).MustCompile()
+
+	// then
+	assert.Equal(t, 5*time.Second, watcher.Spec.Destination.Compiled.Timeout)
 }
 
 func TestController_ReconcileIntegration(t *testing.T) {
@@ -197,11 +214,11 @@ func TestController_ReconcileIntegration(t *testing.T) {
 		w.Write([]byte("OK"))
 	}))
 
-	manager, managerErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
+	mgr, mgrErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
 		Scheme: testVars.scheme, Logger: zap.New(),
 	})
-	if managerErr != nil {
-		panic(managerErr)
+	if mgrErr != nil {
+		panic(mgrErr)
 	}
 
 	watcher := (&v1alpha1.Watcher{
@@ -215,29 +232,21 @@ func TestController_ReconcileIntegration(t *testing.T) {
 				Concurrency: ptr.To(1),
 			},
 			Filter: v1alpha1.Filter{
-				Object: v1alpha1.ObjectFilter{
-					Name:      ptr.To(".*my.*"),
-					Namespace: ptr.To(".*efaul.*"),
-					Labels: ptr.To(map[string]string{
-						"my-label": "true",
-					}),
-					Annotations: ptr.To(map[string]string{
-						"my-annotation": "true",
-					}),
-					Custom: &v1alpha1.CustomObjectFilter{
-						Template: "{{ index .data \"my-key\" | b64dec }}",
-						Result:   "my-value",
-					},
-				},
+				Create: `object.metadata.name.matches('.*my.*')
+					&& object.metadata.namespace.matches('.*efaul.*')
+					&& object.metadata.labels['my-label'] == 'true'
+					&& object.metadata.annotations['my-annotation'] == 'true'`,
 			},
 			Destination: v1alpha1.Destination{
-				URLTemplate:    fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
-				BodyTemplate:   "{{ .data.value }}",
-				Method:         "POST",
-				HeaderTemplate: "Authorization: {{ .data.authorization | b64dec }}",
+				URLTemplate:  fmt.Sprintf("http://%s/{{ .data.id | b64dec }}", server.Listener.Addr().String()),
+				BodyTemplate: "{{ .data.value }}",
+				Method:       "POST",
+				Headers: map[string]string{
+					"Authorization": "{{ .data.authorization | b64dec }}",
+				},
 			},
 		},
-	}).Compile()
+	}).MustCompile()
 
 	secret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -251,7 +260,6 @@ func TestController_ReconcileIntegration(t *testing.T) {
 			},
 		},
 		Data: map[string][]byte{
-			"my-key":        []byte("my-value"),
 			"id":            []byte(gofakeit.UUID()),
 			"value":         []byte(gofakeit.UUID()),
 			"authorization": []byte(gofakeit.UUID()),
@@ -259,21 +267,21 @@ func TestController_ReconcileIntegration(t *testing.T) {
 	}
 
 	if setupErr := (&Controller{
-		client:     manager.GetClient(),
+		client:     mgr.GetClient(),
 		watcher:    watcher,
 		httpClient: server.Client(),
-	}).SetupWithManager(manager); setupErr != nil {
+	}).SetupWithManager(mgr); setupErr != nil {
 		panic(setupErr)
 	}
 
 	go func() {
-		if managerStartErr := manager.Start(ctx); managerStartErr != nil {
+		if managerStartErr := mgr.Start(ctx); managerStartErr != nil {
 			panic(managerStartErr)
 		}
 	}()
 
 	// when
-	createErr := manager.GetClient().Create(ctx, secret)
+	createErr := mgr.GetClient().Create(ctx, secret)
 
 	// then
 	assert.Nil(t, createErr)
@@ -305,11 +313,11 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 		w.Write([]byte("OK"))
 	}))
 
-	manager, managerErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
+	mgr, mgrErr := ctrl.NewManager(testVars.kubeConfig, ctrl.Options{
 		Scheme: testVars.scheme, Logger: zap.New(),
 	})
-	if managerErr != nil {
-		panic(managerErr)
+	if mgrErr != nil {
+		panic(mgrErr)
 	}
 
 	watcher := (&v1alpha1.Watcher{
@@ -328,25 +336,25 @@ func TestController_ReconcileMultipleIntegration(t *testing.T) {
 				Method:       "POST",
 			},
 		},
-	}).Compile()
+	}).MustCompile()
 
 	if setupErr := (&Controller{
-		client:     manager.GetClient(),
+		client:     mgr.GetClient(),
 		watcher:    watcher,
 		httpClient: server.Client(),
-	}).SetupWithManager(manager); setupErr != nil {
+	}).SetupWithManager(mgr); setupErr != nil {
 		panic(setupErr)
 	}
 
 	go func() {
-		if managerStartErr := manager.Start(ctx); managerStartErr != nil {
+		if managerStartErr := mgr.Start(ctx); managerStartErr != nil {
 			panic(managerStartErr)
 		}
 	}()
 
 	// when
 	for i := 0; i < testCount; i++ {
-		assert.Nil(t, manager.GetClient().Create(ctx, &v1.Secret{
+		assert.Nil(t, mgr.GetClient().Create(ctx, &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      strings.ToLower(strings.ReplaceAll(gofakeit.Name(), " ", "")),
 				Namespace: "default",
@@ -376,13 +384,15 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 					},
 				},
 				Destination: v1alpha1.Destination{
-					URLTemplate:    "www.test.com/{{ index .data \"my-key\" }}-in-url",
-					BodyTemplate:   "{{ index .data \"my-key\" }}-in-template",
-					Method:         "POST",
-					HeaderTemplate: "key: {{ index .data \"my-key\" }}",
+					URLTemplate:  "www.test.com/{{ index .data \"my-key\" }}-in-url",
+					BodyTemplate: "{{ index .data \"my-key\" }}-in-template",
+					Method:       "POST",
+					Headers: map[string]string{
+						"key": "{{ index .data \"my-key\" }}",
+					},
 				},
 			},
-		}).Compile()
+		}).MustCompile()
 		mockClient       = new(client2.MockClient)
 		mockRoundTripper = new(http2.MockRoundTripper)
 		secret           = &unstructured.Unstructured{
@@ -421,7 +431,7 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 	assert.False(t, result.Requeue)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
-		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) && len(r.Header) == 1
+		headerMatched := reflect.DeepEqual(r.Header["Key"], []string{"my-value"}) && len(r.Header) == 1
 		methodMatched := reflect.DeepEqual(r.Method, "POST")
 		body, _ := io.ReadAll(r.Body)
 		bodyMatched := string(body) == "my-value-in-template"
@@ -434,600 +444,394 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 		}))
 }
 
-func TestController_Reconcile_FilterObjectByName(t *testing.T) {
+func TestController_FilterEvent_EmptyExpressionsPassEverything(t *testing.T) {
 	// given
-	var (
-		ctx              = context.Background()
-		mockClient       = new(client2.MockClient)
-		mockRoundTripper = new(http2.MockRoundTripper)
-		watcher          = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Name: ptr.To("non-related-name"),
-					},
-				},
+	watcher := (&v1alpha1.Watcher{}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{"name": "x"}})
+
+	// then
+	assert.True(t, pred.Create(event.CreateEvent{Object: obj}))
+	assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: obj, ObjectNew: obj}))
+}
+
+func TestController_FilterEvent_CreateExpression(t *testing.T) {
+	// given: only accept Create events for objects in "default" namespace
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Create: `object.metadata.namespace == 'default'`,
 			},
-		}).Compile()
-		secret = &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"metadata": map[string]interface{}{"name": "my-secret"},
-			},
-		}
-		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
-	)
-	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
-		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
-		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
-			return nil
-		})
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
 
 	// when
-	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(secret),
-	})
+	matched := pred.Create(event.CreateEvent{Object: unstructuredObj(map[string]any{
+		"metadata": map[string]any{"namespace": "default"},
+	})})
+	skipped := pred.Create(event.CreateEvent{Object: unstructuredObj(map[string]any{
+		"metadata": map[string]any{"namespace": "kube-system"},
+	})})
 
 	// then
-	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
-	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.True(t, matched)
+	assert.False(t, skipped)
 }
 
-func TestController_Reconcile_FilterObjectByNamespace(t *testing.T) {
-	// given
-	var (
-		ctx              = context.Background()
-		mockClient       = new(client2.MockClient)
-		mockRoundTripper = new(http2.MockRoundTripper)
-		watcher          = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Namespace: ptr.To("non-related-name"),
-					},
-				},
+func TestController_FilterEvent_CreateRestartSafety(t *testing.T) {
+	// given: only accept Create events for objects created within the last hour (restart safety)
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Create: `now - timestamp(object.metadata.creationTimestamp) < duration('1h')`,
 			},
-		}).Compile()
-		secret = &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"metadata": map[string]interface{}{"namespace": "my-secret"},
-			},
-		}
-		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
-	)
-	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
-		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
-		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
-			return nil
-		})
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	old := time.Now().Add(-8 * time.Hour).UTC().Format(time.RFC3339)
 
 	// when
-	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(secret),
-	})
+	fresh := pred.Create(event.CreateEvent{Object: unstructuredObj(map[string]any{
+		"metadata": map[string]any{"creationTimestamp": now},
+	})})
+	stale := pred.Create(event.CreateEvent{Object: unstructuredObj(map[string]any{
+		"metadata": map[string]any{"creationTimestamp": old},
+	})})
 
 	// then
-	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
-	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.True(t, fresh)
+	assert.False(t, stale)
 }
 
-func TestController_Reconcile_FilterObjectByLabels(t *testing.T) {
-	// given
-	var (
-		ctx              = context.Background()
-		mockClient       = new(client2.MockClient)
-		mockRoundTripper = new(http2.MockRoundTripper)
-		watcher          = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Labels: ptr.To(map[string]string{
-							"non-related-label-key": "non-related-label-value",
-						}),
-					},
-				},
+func TestController_FilterEvent_UpdateComparesOldAndNew(t *testing.T) {
+	// given: fire only when status.phase changes
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Update: `object.status.phase != oldObject.status.phase`,
 			},
-		}).Compile()
-		secret = &unstructured.Unstructured{
-			Object: map[string]interface{}{},
-		}
-		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
-	)
-	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
-		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
-		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
-			return nil
-		})
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	phasePending := unstructuredObj(map[string]any{"status": map[string]any{"phase": "Pending"}})
+	phaseRunning := unstructuredObj(map[string]any{"status": map[string]any{"phase": "Running"}})
 
 	// when
-	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(secret),
-	})
+	changed := pred.Update(event.UpdateEvent{ObjectOld: phasePending, ObjectNew: phaseRunning})
+	unchanged := pred.Update(event.UpdateEvent{ObjectOld: phaseRunning, ObjectNew: phaseRunning})
 
 	// then
-	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
-	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.True(t, changed)
+	assert.False(t, unchanged)
 }
 
-func TestController_Reconcile_FilterObjectByAnnotations(t *testing.T) {
-	// given
-	var (
-		ctx              = context.Background()
-		mockClient       = new(client2.MockClient)
-		mockRoundTripper = new(http2.MockRoundTripper)
-		watcher          = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Annotations: ptr.To(map[string]string{
-							"non-related-label-key": "non-related-label-value",
-						}),
-					},
-				},
+func TestController_FilterEvent_UpdateScaleUpOnly(t *testing.T) {
+	// given: fire only on replica scale-ups (not scale-downs)
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Update: `int(object.spec.replicas) > int(oldObject.spec.replicas)`,
 			},
-		}).Compile()
-		secret = &unstructured.Unstructured{
-			Object: map[string]interface{}{},
-		}
-		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
-	)
-	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
-		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
-		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
-			return nil
-		})
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	mk := func(r int64) *unstructured.Unstructured {
+		return unstructuredObj(map[string]any{"spec": map[string]any{"replicas": r}})
+	}
 
 	// when
-	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(secret),
-	})
+	up := pred.Update(event.UpdateEvent{ObjectOld: mk(2), ObjectNew: mk(3)})
+	down := pred.Update(event.UpdateEvent{ObjectOld: mk(3), ObjectNew: mk(2)})
+	flat := pred.Update(event.UpdateEvent{ObjectOld: mk(2), ObjectNew: mk(2)})
+
 	// then
-	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
-	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.True(t, up)
+	assert.False(t, down)
+	assert.False(t, flat)
 }
 
-func TestController_Reconcile_FilterByCustom(t *testing.T) {
-	// given
-	var (
-		ctx              = context.Background()
-		mockClient       = new(client2.MockClient)
-		mockRoundTripper = new(http2.MockRoundTripper)
-		watcher          = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Object: v1alpha1.ObjectFilter{
-						Custom: &v1alpha1.CustomObjectFilter{
-							Template: "{{ .data.key }}",
-							Result:   "non-related-value",
-						},
-					},
-				},
+func TestController_FilterEvent_DeepEqualOnList(t *testing.T) {
+	// given: replicate the old fields:[".status.conditions"] semantic
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Update: `object.status.conditions != oldObject.status.conditions`,
 			},
-		}).Compile()
-		secret = &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"metadata": map[string]interface{}{"namespace": "my-secret"},
-				"data":     map[string]interface{}{"key": "value"},
-			},
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	mk := func(types ...string) *unstructured.Unstructured {
+		conds := make([]any, 0, len(types))
+		for _, ty := range types {
+			conds = append(conds, map[string]any{"type": ty})
 		}
-		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
-	)
-	mockClient.EXPECT().Get(mock.Anything, client.ObjectKeyFromObject(secret),
-		mock.AnythingOfType("*unstructured.Unstructured")).RunAndReturn(
-		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
-			secret.DeepCopyInto(obj.(*unstructured.Unstructured))
-			return nil
-		})
+		return unstructuredObj(map[string]any{"status": map[string]any{"conditions": conds}})
+	}
 
 	// when
-	result, reconcileErr := controller.Reconcile(ctx, ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(secret),
+	changed := pred.Update(event.UpdateEvent{ObjectOld: mk("A"), ObjectNew: mk("A", "B")})
+	unchanged := pred.Update(event.UpdateEvent{ObjectOld: mk("A", "B"), ObjectNew: mk("A", "B")})
+
+	// then
+	assert.True(t, changed)
+	assert.False(t, unchanged)
+}
+
+func TestController_FilterEvent_RejectsNonUnstructured(t *testing.T) {
+	// given
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Create: `true`,
+				Update: `true`,
+			},
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	// when typed (non-unstructured) objects flow in, the filter rejects them
+	// (CEL bindings expect dynamic maps from unstructured)
+	create := pred.Create(event.CreateEvent{
+		Object: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 	})
-	// then
-	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
-	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
-}
-
-func TestController_FilterEvent(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		oldSecret  = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now()},
-				Generation:        int64(1),
-				ResourceVersion:   "1",
-			},
-		}
-		newSecret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now()},
-				Generation:        int64(2),
-				ResourceVersion:   "2",
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Create: v1alpha1.CreateEventFilter{
-							CreationTimeout: ptr.To("1h"),
-						},
-						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged:      ptr.To(true),
-							ResourceVersionChanged: ptr.To(true),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	filtered := controller.Create(event.CreateEvent{
-		Object: newSecret,
-	}) && controller.Update(event.UpdateEvent{
-		ObjectOld: oldSecret,
-		ObjectNew: newSecret,
-	}) == false
-
-	// then
-	assert.False(t, filtered)
-}
-
-func TestController_FilterEvent_CreationTimeouts(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		newSecret  = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now()},
-			},
-		}
-		oldSecret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				CreationTimestamp: metav1.Time{Time: time.Now().Add(-8 * time.Hour)},
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Create: v1alpha1.CreateEventFilter{
-							CreationTimeout: ptr.To("1h"),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	oldSecretFiltered := controller.Create(event.CreateEvent{
-		Object: oldSecret,
-	}) == false
-	newSecretFiltered := controller.Create(event.CreateEvent{
-		Object: newSecret,
-	}) == false
-
-	// then
-	assert.True(t, oldSecretFiltered)
-	assert.False(t, newSecretFiltered)
-}
-
-func TestController_FilterEvent_GenerationChanged(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		gen1Secret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(1),
-			},
-		}
-		gen2Secret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(2),
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged: ptr.To(true),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	differentGenFiltered := controller.Update(event.UpdateEvent{
-		ObjectOld: gen1Secret,
-		ObjectNew: gen2Secret,
-	}) == false
-	sameGenFiltered := controller.Update(event.UpdateEvent{
-		ObjectOld: gen2Secret,
-		ObjectNew: gen2Secret,
-	}) == false
-
-	// then
-	assert.False(t, differentGenFiltered)
-	assert.True(t, sameGenFiltered)
-}
-
-func TestController_FilterEvent_ResourceVersionChanged(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		res1Secret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				ResourceVersion: "1",
-			},
-		}
-		res2Secret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				ResourceVersion: "2",
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							ResourceVersionChanged: ptr.To(true),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	differentResFiltered := controller.Update(event.UpdateEvent{
-		ObjectOld: res1Secret,
-		ObjectNew: res2Secret,
-	}) == false
-	sameResFiltered := controller.Update(event.UpdateEvent{
-		ObjectOld: res2Secret,
-		ObjectNew: res2Secret,
-	}) == false
-
-	// then
-	assert.False(t, differentResFiltered)
-	assert.True(t, sameResFiltered)
-}
-
-func TestController_FilterEvent_UpdateGenerationChangedTrue(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		oldSecret  = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(2),
-			},
-		}
-		newSecret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(2),
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged: ptr.To(true),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	filtered := controller.Update(event.UpdateEvent{
-		ObjectOld: oldSecret,
-		ObjectNew: newSecret,
-	}) == false
-
-	// then
-	assert.True(t, filtered)
-}
-
-func TestController_FilterEvent_UpdateGenerationChangedFalse(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		oldSecret  = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(1),
-			},
-		}
-		newSecret = &v1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Generation: int64(1),
-			},
-		}
-		watcher = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							GenerationChanged: ptr.To(false),
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when
-	filtered := controller.Update(event.UpdateEvent{
-		ObjectOld: oldSecret,
-		ObjectNew: newSecret,
-	}) == false
-
-	// then
-	assert.False(t, filtered)
-}
-
-func TestController_FilterEvent_UpdateFields(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		watcher    = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							Fields: []string{".status.phase", "spec.replicas"},
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-
-		makeObj = func(phase string, replicas int64) *unstructured.Unstructured {
-			return &unstructured.Unstructured{
-				Object: map[string]interface{}{
-					"status": map[string]interface{}{
-						"phase":         phase,
-						"readyReplicas": int64(3),
-					},
-					"spec": map[string]interface{}{
-						"replicas": replicas,
-					},
-				},
-			}
-		}
-	)
-
-	// when: a watched field (.status.phase) changes
-	statusPhaseChanged := controller.Update(event.UpdateEvent{
-		ObjectOld: makeObj("Pending", 1),
-		ObjectNew: makeObj("Running", 1),
-	})
-	// when: the other watched field (spec.replicas, leading dot omitted) changes
-	specReplicasChanged := controller.Update(event.UpdateEvent{
-		ObjectOld: makeObj("Running", 1),
-		ObjectNew: makeObj("Running", 2),
-	})
-	// when: only an unwatched field (.status.readyReplicas) changes
-	unwatchedFieldChanged := controller.Update(event.UpdateEvent{
-		ObjectOld: makeObj("Running", 1),
-		ObjectNew: func() *unstructured.Unstructured {
-			obj := makeObj("Running", 1)
-			obj.Object["status"].(map[string]interface{})["readyReplicas"] = int64(5)
-			return obj
-		}(),
-	})
-	// when: nothing changes
-	nothingChanged := controller.Update(event.UpdateEvent{
-		ObjectOld: makeObj("Running", 1),
-		ObjectNew: makeObj("Running", 1),
-	})
-
-	// then
-	assert.True(t, statusPhaseChanged)
-	assert.True(t, specReplicasChanged)
-	assert.False(t, unwatchedFieldChanged)
-	assert.False(t, nothingChanged)
-}
-
-func TestController_FilterEvent_UpdateFieldsAppearsOrDisappears(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		watcher    = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							Fields: []string{".status.phase"},
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-
-		withPhase = &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"status": map[string]interface{}{"phase": "Running"},
-			},
-		}
-		withoutPhase = &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"status": map[string]interface{}{},
-			},
-		}
-	)
-
-	// when: the watched field appears
-	appeared := controller.Update(event.UpdateEvent{
-		ObjectOld: withoutPhase,
-		ObjectNew: withPhase,
-	})
-	// when: the watched field disappears
-	disappeared := controller.Update(event.UpdateEvent{
-		ObjectOld: withPhase,
-		ObjectNew: withoutPhase,
-	})
-	// when: the watched field is absent on both
-	bothMissing := controller.Update(event.UpdateEvent{
-		ObjectOld: withoutPhase,
-		ObjectNew: withoutPhase,
-	})
-
-	// then
-	assert.True(t, appeared)
-	assert.True(t, disappeared)
-	assert.False(t, bothMissing)
-}
-
-func TestController_FilterEvent_UpdateFieldsRejectsNonUnstructured(t *testing.T) {
-	// given
-	var (
-		mockClient = new(client2.MockClient)
-		watcher    = (&v1alpha1.Watcher{
-			Spec: v1alpha1.WatcherSpec{
-				Filter: v1alpha1.Filter{
-					Event: v1alpha1.EventFilter{
-						Update: v1alpha1.UpdateEventFilter{
-							Fields: []string{".metadata.name"},
-						},
-					},
-				},
-			},
-		}).Compile()
-		controller = NewController(mockClient, &http.Client{}, watcher).FilterEvent()
-	)
-
-	// when: typed objects (not *unstructured.Unstructured) are passed
-	result := controller.Update(event.UpdateEvent{
+	update := pred.Update(event.UpdateEvent{
 		ObjectOld: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
 		ObjectNew: &v1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
 	})
 
-	// then: the filter rejects the event because it can't introspect typed objects
-	assert.False(t, result)
+	// then
+	assert.False(t, create)
+	assert.False(t, update)
+}
+
+func TestController_FilterEvent_NonBoolReturnsFalse(t *testing.T) {
+	// given: expression returns a non-bool string -> treat as filtered out
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Create: `"hello"`,
+			},
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{"name": "x"}})
+
+	// then
+	assert.False(t, pred.Create(event.CreateEvent{Object: obj}))
+}
+
+func TestController_FilterEvent_DeleteDisabledByDefault(t *testing.T) {
+	// given: no filter.delete -> Delete events are dropped (conservative default)
+	watcher := (&v1alpha1.Watcher{}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{"name": "x"}})
+
+	// then
+	assert.False(t, pred.Delete(event.DeleteEvent{Object: obj}))
+}
+
+func TestController_FilterEvent_DeleteEnabledByExpression(t *testing.T) {
+	// given: filter.delete = "true" -> every Delete event passes
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{Delete: "true"},
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{
+		"name":      "x",
+		"namespace": "default",
+	}})
+
+	// then
+	assert.True(t, pred.Delete(event.DeleteEvent{Object: obj}))
+}
+
+func TestController_FilterEvent_DeleteCachesObjectForReconcile(t *testing.T) {
+	// given
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{Delete: `object.metadata.namespace == 'default'`},
+		},
+	}).MustCompile()
+	c := NewController(new(client2.MockClient), &http.Client{}, watcher)
+	pred := c.FilterEvent()
+
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{
+		"name":      "my-secret",
+		"namespace": "default",
+	}})
+
+	// when: predicate accepts the delete and caches the object
+	passed := pred.Delete(event.DeleteEvent{Object: obj})
+
+	// then
+	assert.True(t, passed)
+	cached, ok := c.deleted.Load(types.NamespacedName{Name: "my-secret", Namespace: "default"})
+	assert.True(t, ok)
+	assert.Equal(t, "my-secret", cached.(*unstructured.Unstructured).GetName())
+}
+
+func TestController_Reconcile_FiresFromDeleteCacheWhenGetReturnsNotFound(t *testing.T) {
+	// given: object is gone from the API server but cached as a tracked delete
+	var (
+		ctx     = context.Background()
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com/{{ .metadata.name }}",
+					BodyTemplate: "{{ .metadata.name }}-deleted",
+					Method:       "POST",
+				},
+			},
+		}).MustCompile()
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		deleted          = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "default",
+				},
+			},
+		}
+		c   = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
+		key = client.ObjectKeyFromObject(deleted)
+	)
+
+	c.deleted.Store(key, deleted)
+	mockClient.EXPECT().Get(mock.Anything, key, mock.Anything).Return(
+		apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, "my-secret"))
+	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(&http.Response{StatusCode: 200}, nil)
+
+	// when
+	_, reconcileErr := c.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+
+	// then: send fired with cached object, cache evicted
+	assert.Nil(t, reconcileErr)
+	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
+		body, _ := io.ReadAll(r.Body)
+		return r.URL.String() == "www.test.com/my-secret" && string(body) == "my-secret-deleted"
+	}))
+	_, stillCached := c.deleted.Load(key)
+	assert.False(t, stillCached)
+}
+
+func TestController_Reconcile_LiveObjectClearsStaleDeleteCacheEntry(t *testing.T) {
+	// given: a recreate scenario — same name, but a live object now exists
+	var (
+		ctx     = context.Background()
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Destination: v1alpha1.Destination{
+					URLTemplate:  "www.test.com/{{ .metadata.name }}",
+					BodyTemplate: "{{ .metadata.name }}",
+					Method:       "POST",
+				},
+			},
+		}).MustCompile()
+		mockClient       = new(client2.MockClient)
+		mockRoundTripper = new(http2.MockRoundTripper)
+		live             = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "default",
+				},
+			},
+		}
+		stale = &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"metadata": map[string]interface{}{
+					"name":      "my-secret",
+					"namespace": "default",
+				},
+			},
+		}
+		c   = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
+		key = client.ObjectKeyFromObject(live)
+	)
+
+	c.deleted.Store(key, stale)
+	mockClient.EXPECT().Get(mock.Anything, key, mock.Anything).RunAndReturn(
+		func(ctx context.Context, _ types.NamespacedName, obj client.Object, _ ...client.GetOption) error {
+			live.DeepCopyInto(obj.(*unstructured.Unstructured))
+			return nil
+		})
+	mockRoundTripper.EXPECT().RoundTrip(mock.Anything).Return(&http.Response{StatusCode: 200}, nil)
+
+	// when
+	_, reconcileErr := c.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+
+	// then: send fired against live object; stale entry pruned
+	assert.Nil(t, reconcileErr)
+	_, stillCached := c.deleted.Load(key)
+	assert.False(t, stillCached)
+}
+
+func TestController_FilterEvent_RuntimeErrorReturnsFalse(t *testing.T) {
+	// given: expression references a field that doesn't exist on the object -> runtime error
+	watcher := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{
+				Create: `object.spec.foo == 'bar'`,
+			},
+		},
+	}).MustCompile()
+	pred := NewController(new(client2.MockClient), &http.Client{}, watcher).FilterEvent()
+
+	// when: object has no spec, expression blows up at eval time -> false
+	obj := unstructuredObj(map[string]any{"metadata": map[string]any{"name": "x"}})
+
+	// then
+	assert.False(t, pred.Create(event.CreateEvent{Object: obj}))
+}
+
+func TestController_Compile_ReturnsErrorOnInvalidExpression(t *testing.T) {
+	_, err := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{Create: "this is not (valid CEL"},
+		},
+	}).Compile()
+	assert.Error(t, err)
+}
+
+func TestController_Compile_ReturnsErrorOnInvalidTimeout(t *testing.T) {
+	_, err := (&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Destination: v1alpha1.Destination{Timeout: ptr.To("not-a-duration")},
+		},
+	}).Compile()
+	assert.Error(t, err)
+}
+
+func TestController_MustCompile_PanicsOnInvalidExpression(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on invalid CEL expression")
+		}
+	}()
+	(&v1alpha1.Watcher{
+		Spec: v1alpha1.WatcherSpec{
+			Filter: v1alpha1.Filter{Create: "this is not (valid CEL"},
+		},
+	}).MustCompile()
 }
 
 func TestController_SetupWithManager(t *testing.T) {
@@ -1045,7 +849,7 @@ func TestController_SetupWithManager(t *testing.T) {
 					Concurrency: ptr.To(2),
 				},
 			},
-		}).Compile()
+		}).MustCompile()
 		controller = NewController(mockClient, &http.Client{Transport: mockRoundTripper}, watcher)
 	)
 
@@ -1064,4 +868,8 @@ func TestController_SetupWithManager(t *testing.T) {
 
 	// then
 	assert.Nil(t, setupErr)
+}
+
+func unstructuredObj(content map[string]any) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: content}
 }
