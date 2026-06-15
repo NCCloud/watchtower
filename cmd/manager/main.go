@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"dario.cat/mergo"
-
 	"github.com/go-co-op/gocron/v2"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/nccloud/watchtower/pkg"
@@ -26,16 +25,11 @@ import (
 )
 
 var (
-	metricPort   = 8083
-	healthPort   = 8084
-	logger       = zap.New()
-	config       = common.NewConfig()
-	scheme       = runtime.NewScheme()
-	interruptCtx = ctrl.SetupSignalHandler()
-	restartCtx   context.Context
-	restart      context.CancelFunc
-	kubeClient   client.Client
-	watchers     []v1alpha1.Watcher
+	metricPort = 8083
+	healthPort = 8084
+	logger     = zap.New()
+	config     = common.NewConfig()
+	scheme     = runtime.NewScheme()
 )
 
 func main() {
@@ -43,24 +37,26 @@ func main() {
 	common.Must(clientgoscheme.AddToScheme(scheme))
 	common.Must(v1alpha1.AddToScheme(scheme))
 
-	scheduler := common.MustReturn(gocron.NewScheduler())
-	kubeClient = common.MustReturn(client.New(ctrl.GetConfigOrDie(), client.Options{
-		Scheme: scheme,
-	}))
+	interruptCtx := ctrl.SetupSignalHandler()
+	kubeClient := common.MustReturn(client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme}))
+	watchers := common.MustReturn(RefreshWatchers(context.Background(), kubeClient))
 
-	common.Must(RefreshWatchers(context.Background(), kubeClient))
+	scheduler := common.MustReturn(gocron.NewScheduler())
+	restartCtx, restart := context.WithCancel(interruptCtx)
 
 	common.MustReturn(scheduler.NewJob(gocron.DurationJob(config.WatcherRefreshPeriod), gocron.NewTask(func() {
 		hash := common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil))
 
-		if refreshErr := RefreshWatchers(interruptCtx, kubeClient); refreshErr != nil {
+		refreshed, refreshErr := RefreshWatchers(interruptCtx, kubeClient)
+		if refreshErr != nil {
 			logger.Error(refreshErr, "An error occurred while refreshing watchers.")
 
 			return
 		}
 
-		if hash != common.MustReturn(hashstructure.Hash(watchers, hashstructure.FormatV2, nil)) {
+		if hash != common.MustReturn(hashstructure.Hash(refreshed, hashstructure.FormatV2, nil)) {
 			logger.Info("Watchers updated, restarting")
+			watchers = refreshed
 			restart()
 		}
 	}), gocron.WithSingletonMode(gocron.LimitModeReschedule)))
@@ -68,20 +64,23 @@ func main() {
 	scheduler.Start()
 
 	for interruptCtx.Err() == nil {
+		if err := StartManager(restartCtx, watchers); err != nil && restartCtx.Err() == nil {
+			common.Must(err)
+		}
+
 		restartCtx, restart = context.WithCancel(interruptCtx)
-		StartManager(restartCtx, watchers)
 	}
 
 	_ = scheduler.Shutdown()
 }
 
-func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
+func RefreshWatchers(ctx context.Context, kubeClient client.Reader) ([]v1alpha1.Watcher, error) {
 	watcherList := v1alpha1.WatcherList{}
 	if listErr := kubeClient.List(ctx, &watcherList); listErr != nil {
-		return listErr
+		return nil, listErr
 	}
 
-	watchers = []v1alpha1.Watcher{}
+	watchers := make([]v1alpha1.Watcher, 0, len(watcherList.Items))
 
 	for _, watcher := range watcherList.Items {
 		for _, secretKeySelector := range watcher.Spec.ValuesFrom.Secrets {
@@ -93,28 +92,28 @@ func RefreshWatchers(ctx context.Context, kubeClient client.Reader) error {
 			if getErr := kubeClient.Get(ctx, types.NamespacedName{
 				Name: secretKeySelector.Name, Namespace: secretKeySelector.Namespace,
 			}, &secret); getErr != nil {
-				return getErr
+				return nil, getErr
 			}
 
 			if unmarshallErr := yaml.Unmarshal(secret.Data[secretKeySelector.Key],
 				&specFromSecret); unmarshallErr != nil {
-				return unmarshallErr
+				return nil, unmarshallErr
 			}
 
 			if mergeErr := mergo.Merge(&watcher, v1alpha1.Watcher{Spec: specFromSecret},
 				mergo.WithOverride, mergo.WithAppendSlice); mergeErr != nil {
-				return mergeErr
+				return nil, mergeErr
 			}
 		}
 
 		watchers = append(watchers, watcher)
 	}
 
-	return nil
+	return watchers, nil
 }
 
-func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) {
-	manager := common.MustReturn(ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) error {
+	manager, managerErr := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Logger: logger,
 		Cache: cache.Options{
@@ -127,13 +126,20 @@ func StartManager(ctx context.Context, watchers []v1alpha1.Watcher) {
 		LeaderElection:                config.EnableLeaderElection,
 		LeaderElectionID:              "watchtower.cloud.spaceship.com",
 		LeaderElectionReleaseOnCancel: true,
-	}))
+	})
+	if managerErr != nil {
+		return managerErr
+	}
 
 	for _, watcher := range watchers {
-		common.Must(pkg.NewController(manager.GetClient(), &http.Client{}, watcher.Compile()).SetupWithManager(manager))
+		if setupErr := pkg.NewController(manager.GetClient(), &http.Client{}, watcher.Compile()).
+			SetupWithManager(manager); setupErr != nil {
+			return setupErr
+		}
 	}
 
 	common.Must(manager.AddHealthzCheck("healthz", healthz.Ping))
 	common.Must(manager.AddReadyzCheck("readyz", healthz.Ping))
-	common.Must(manager.Start(ctx))
+
+	return manager.Start(ctx)
 }

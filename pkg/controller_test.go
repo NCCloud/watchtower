@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brianvoe/gofakeit/v6"
+	"github.com/brianvoe/gofakeit/v7"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	http2 "github.com/nccloud/watchtower/mocks/net/http"
