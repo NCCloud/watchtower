@@ -176,7 +176,7 @@ func TestController_Reconcile(t *testing.T) {
 
 	// then
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
 		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) &&
@@ -421,7 +421,7 @@ func TestController_Reconcile_DeleteObjectOnSuccess(t *testing.T) {
 
 	// then
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 	mockRoundTripper.AssertCalled(t, "RoundTrip", mock.MatchedBy(func(r *http.Request) bool {
 		urlMatched := reflect.DeepEqual(r.URL.String(), "www.test.com/my-value-in-url")
 		headerMatched := reflect.DeepEqual(r.Header["key"], []string{"my-value"}) && len(r.Header) == 1
@@ -474,7 +474,7 @@ func TestController_Reconcile_FilterObjectByName(t *testing.T) {
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 }
 
 func TestController_Reconcile_FilterObjectByNamespace(t *testing.T) {
@@ -514,7 +514,7 @@ func TestController_Reconcile_FilterObjectByNamespace(t *testing.T) {
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 }
 
 func TestController_Reconcile_FilterObjectByLabels(t *testing.T) {
@@ -554,7 +554,7 @@ func TestController_Reconcile_FilterObjectByLabels(t *testing.T) {
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 }
 
 func TestController_Reconcile_FilterObjectByAnnotations(t *testing.T) {
@@ -593,7 +593,7 @@ func TestController_Reconcile_FilterObjectByAnnotations(t *testing.T) {
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 }
 
 func TestController_Reconcile_FilterByCustom(t *testing.T) {
@@ -636,7 +636,7 @@ func TestController_Reconcile_FilterByCustom(t *testing.T) {
 	// then
 	mockRoundTripper.AssertNotCalled(t, "RoundTrip")
 	assert.Nil(t, reconcileErr)
-	assert.False(t, result.Requeue)
+	assert.Equal(t, ctrl.Result{}, result)
 }
 
 func TestController_FilterEvent(t *testing.T) {
