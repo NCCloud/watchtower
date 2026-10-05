@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/nccloud/watchtower/pkg/apis/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -43,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var testVars = struct {
@@ -1064,4 +1067,35 @@ func TestController_SetupWithManager(t *testing.T) {
 
 	// then
 	assert.Nil(t, setupErr)
+}
+
+func TestController_ControllerOptions(t *testing.T) {
+	// given
+	var (
+		watcher = (&v1alpha1.Watcher{
+			Spec: v1alpha1.WatcherSpec{
+				Source: v1alpha1.Source{
+					Concurrency: ptr.To(3),
+				},
+			},
+		}).Compile()
+		controller = NewController(new(client2.MockClient), &http.Client{}, watcher)
+	)
+
+	// when
+	options := controller.controllerOptions()
+
+	// then
+	assert.Equal(t, 3, options.MaxConcurrentReconciles)
+	require.NotNil(t, options.RateLimiter)
+
+	var maxDelay time.Duration
+
+	for i := range 200 {
+		maxDelay = max(maxDelay, options.RateLimiter.When(reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: "default", Name: strconv.Itoa(i)},
+		}))
+	}
+
+	assert.Greater(t, maxDelay, time.Second)
 }
