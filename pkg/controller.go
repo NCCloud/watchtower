@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/util/workqueue"
 
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var ErrUnexpectedStatusCode = errors.New("unexpected status code")
@@ -221,9 +223,15 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(r.watcher.GetName()).
 		WithEventFilter(r.FilterEvent()).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
-		}).
+		WithOptions(r.controllerOptions()).
 		For(r.watcher.Spec.Source.NewObject()).
 		Complete(r)
+}
+
+func (r *Controller) controllerOptions() controller.Options {
+	return controller.Options{
+		MaxConcurrentReconciles: r.watcher.Spec.GetConcurrency(),
+		// Keeps the overall 10 qps retry limit: every retry sends the object's request to the destination again.
+		RateLimiter: workqueue.DefaultTypedControllerRateLimiter[reconcile.Request](),
+	}
 }
