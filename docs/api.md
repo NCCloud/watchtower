@@ -236,7 +236,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `cloud.spaceship.com/v1alpha1` | | |
 | `kind` _string_ | `Watcher` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[WatcherSpec](#watcherspec)_ |  |  |  |
 
 

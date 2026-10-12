@@ -8,6 +8,7 @@ import (
 	"github.com/nccloud/watchtower/pkg/common"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 //+kubebuilder:object:root=true
@@ -207,5 +208,9 @@ func (w *Watcher) Compile() *Watcher {
 }
 
 func init() {
-	SchemeBuilder.Register(&Watcher{}, &WatcherList{})
+	SchemeBuilder.Register(func(scheme *runtime.Scheme) error {
+		scheme.AddKnownTypes(GroupVersion, &Watcher{}, &WatcherList{})
+
+		return nil
+	})
 }
